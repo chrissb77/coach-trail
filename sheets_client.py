@@ -1,36 +1,39 @@
 import gspread
+import streamlit as st
+from google.oauth2.service_account import Credentials
 
-# Remplacez ceci par l'ID que vous avez copié dans l'URL de votre document
+# L'ID de votre document
 SHEET_ID = "1a2fmc8DKCjYugNiZHJ5aM508lC9k53IoDwsLhplRlc8"
 
 def connect_to_sheets():
     print("Tentative de connexion à Google Sheets...")
     try:
-        # Authentification via votre fichier JSON de service
-        gc = gspread.service_account(filename="service_account.json")
+        # 1. On lit les identifiants depuis le coffre-fort de Streamlit
+        creds_dict = dict(st.secrets["gcp_service_account"])
         
-        # Ouverture du fichier
-        sh = gc.open_by_key(SHEET_ID)
+        # 2. Définition des droits d'accès
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        
+        # 3. Authentification sécurisée (sans fichier physique)
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        gc = gspread.authorize(creds)
+        
+        # 4. Ouverture du fichier
+        # On utilise le SHEET_ID des secrets s'il existe, sinon on prend celui par défaut
+        active_id = st.secrets.get("SHEET_ID", SHEET_ID)
+        sh = gc.open_by_key(active_id)
+        
         print(f"✅ Connexion réussie au document : '{sh.title}'")
-        
-        # Test de lecture sur le premier onglet (Progression Annuelle)
-        worksheet = sh.sheet1
-        
-        # On récupère toutes les valeurs
-        valeurs = worksheet.get_all_values()
-        
-        print("\nVoici les en-têtes de votre tableur :")
-        print(valeurs[0])
-        
         return sh
         
-    except FileNotFoundError:
-        print("❌ Erreur : Le fichier 'service_account.json' est introuvable dans le dossier.")
     except Exception as e:
         print("❌ Erreur de connexion :", e)
-        print("Avez-vous bien partagé le document avec l'adresse email du compte de service ?")
+        st.error(f"Impossible de se connecter à la base de données : {e}")
         return None
 
-# Test direct quand on lance ce fichier
+# Test direct quand on lance ce fichier localement
 if __name__ == "__main__":
     connect_to_sheets()

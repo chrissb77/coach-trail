@@ -1,3 +1,5 @@
 .streamlit/
 __pycache__/
 Plan_60km_4000D-v2.xlsx
+service_account.json
+*.json
