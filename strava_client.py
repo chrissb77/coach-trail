@@ -26,19 +26,18 @@ def extract_training_data(sh):
         ws = sh.worksheet("Historique_Strava")
     except gspread.exceptions.WorksheetNotFound:
         ws = sh.add_worksheet(title="Historique_Strava", rows="1000", cols="20")
-        en_tetes = ['ID', 'Date', 'Date_API', 'Type', 'Nom', 'Distance (km)', 'Dénivelé (m)', 'Temps (min)', 'FC Moyenne']
+        en_tetes = ['ID', 'Date', 'Date_API', 'Type', 'Nom', 'Distance (km)', 'Dénivelé (m)', 'Temps (min)', 'FC Moyenne', 'Notes']
         ws.append_row(en_tetes)
 
     donnees = ws.get_all_records()
     df_hist = pd.DataFrame(donnees)
     
-    ids_existants = set() # NOUVEAU : Mémoire des IDs existants
+    ids_existants = set() 
     
     if not df_hist.empty:
         last_date_str = df_hist['Date_API'].max()
         dt_obj = datetime.strptime(last_date_str, "%Y-%m-%dT%H:%M:%SZ")
         after_timestamp = int(dt_obj.timestamp())
-        # On convertit les ID existants en texte pour les comparer facilement
         ids_existants = set(df_hist['ID'].astype(str))
     else:
         after_timestamp = int(time.time()) - (30 * 24 * 3600)
@@ -65,8 +64,9 @@ def extract_training_data(sh):
     for act in new_activities:
         act_id_str = str(act['id'])
         
-        # NOUVEAU : Filtre strict, on n'ajoute que si l'ID n'est pas dans le Sheet
         if act_id_str not in ids_existants:
+            notes = get_activity_details(act_id_str)
+            
             nouvelles_lignes.append([
                 act_id_str,
                 act['start_date_local'][:10],
@@ -76,7 +76,8 @@ def extract_training_data(sh):
                 round(act.get('distance', 0) / 1000, 2),
                 act.get('total_elevation_gain', 0),
                 round(act.get('moving_time', 0) / 60, 1),
-                act.get('average_heartrate', 0)
+                act.get('average_heartrate', 0),
+                notes
             ])
         
     if nouvelles_lignes:
@@ -84,6 +85,23 @@ def extract_training_data(sh):
         df_hist = pd.DataFrame(ws.get_all_records())
         
     return df_hist.sort_values(by='Date_API', ascending=False)
+
+def get_activity_details(act_id):
+    """Récupère les détails complets d'une activité (incluant description et note privée)"""
+    try:
+        access_token = get_access_token()
+        headers = {'Authorization': f'Bearer {access_token}'}
+        res = requests.get(f"https://www.strava.com/api/v3/activities/{act_id}", headers=headers)
+        if res.status_code == 200:
+            data = res.json()
+            desc = data.get('description') or ''
+            priv = data.get('private_note') or ''
+            if desc and priv:
+                return f"{desc} | Note privée : {priv}"
+            return desc or priv
+    except Exception:
+        pass
+    return ""
 
 def get_activity_streams(act_id):
     access_token = get_access_token()
@@ -96,21 +114,19 @@ def get_activity_streams(act_id):
     return None
     
 def get_advanced_kpis(act_id):
-    """Calcule des indicateurs physiologiques avancés à partir des streams"""
     streams = get_activity_streams(act_id)
     if not streams or 'heartrate' not in streams:
         return "Pas de données cardio"
         
     hr_data = streams['heartrate']['data']
     if len(hr_data) < 10:
-        return "Données insuffisantes"
+        notes = "Données insuffisantes"
+        return notes
 
-    # 1. Calcul du temps passé par zone (Seuils arbitraires à adapter : 140 et 160)
     z1 = sum(1 for h in hr_data if h < 140) / len(hr_data) * 100
     z2 = sum(1 for h in hr_data if 140 <= h <= 160) / len(hr_data) * 100
     z3 = sum(1 for h in hr_data if h > 160) / len(hr_data) * 100
 
-    # 2. Détection de la dérive cardiaque (Fatigue / Déshydratation)
     mid = len(hr_data) // 2
     hr_first = sum(hr_data[:mid]) / mid if mid > 0 else 0
     hr_second = sum(hr_data[mid:]) / (len(hr_data)-mid) if mid > 0 else 0
