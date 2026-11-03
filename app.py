@@ -5,6 +5,7 @@ import strava_client
 import sheets_client
 import json
 import time
+import streamlit.components.v1 as components
 from datetime import datetime
 import plotly.graph_objects as go
 import plotly.express as px 
@@ -13,11 +14,40 @@ st.set_page_config(page_title="Coach Trail IA", page_icon="🏃‍♂️", layou
 
 st.title("🏃‍♂️ Coach Virtuel - 60km")
 
+# --- CONSTANTES PHYSIOLOGIQUES & LOGISTIQUES ---
+ZONES_FC_TEXTE = """
+- Z1 (Récupération : 50-60%) : 90 - 108 bpm
+- Z2 (Endurance Fondamentale : 60-75%) : 108 - 135 bpm
+- Z3 (Tempo / Aérobie : 75-85%) : 135 - 153 bpm
+- Z4 (Seuil : 85-92%) : 153 - 166 bpm
+- Z5 (PMA / Anaérobie : 92-100%) : 166 - 180 bpm
+"""
+
+REGLES_LOGISTIQUES_COACH = """
+CATALOGUE DES OPTIONS LOGISTIQUES & MATÉRIEL DISPONIBLES :
+1. Trajets Travail (à privilégier le VENDREDI) :
+   - Option A "Vélotaf Route/Gravel" : Trajet retour à vélo en Z1/Z2 (108-135 bpm) pour accumuler du volume aérobie sans impact articulaire.
+   - Option B "Retour du travail à pied (Run-commute Choc)" : 40 km avec 1000m D+ en Z2 (108-135 bpm). C'est une très grosse séance spécifique ultra qui remplace la sortie longue du week-end (à programmer uniquement lors des semaines de charge clé ou sur demande, suivie d'un week-end très allégé).
+2. Option "VTT Électrique (VTTAE)" :
+   - Disponible (au printemps ou le week end) pour des séances souples de récupération active en Z1 (90-108 bpm) ou d'endurance fondamentale Z2 basse (108-125 bpm). Idéal pour travailler la vélocité, profiter des sentiers en forêt sans faire monter le cardio dans les bosses, ou débloquer les jambes le dimanche veille de foot.
+
+RÈGLES D'ORGANISATION HEBDOMADAIRE :
+- LUNDI : Football (séance fixe, haute intensité cardio Z4/Z5 et forte charge excentrique/tendineuse).
+- MARDI : Récupération post-foot (Repos, mobilité/renfo Achille, ou VTTAE très souple en Z1).
+- VENDREDI : Jour privilégié pour les options au départ du travail (Vélotaf ou, ponctuellement, le retour à pied de 40km / 1000m D+).
+- SAMEDI : Jour privilégié pour la Sortie Longue Trail (afin de garantir 48h de récupération avant le football du lundi), SAUF si le retour à pied de 40km a eu lieu le vendredi (auquel cas samedi = repos ou VTTAE Z1).
+- DIMANCHE : Séance souple d'assimilation (VTTAE Z1/Z2, vélo souple, footing court Z2 ou repos) pour arriver frais au foot le lundi.
+- CONSIGNE FORMAT : Chaque séance d'endurance DOIT mentionner la zone cible et les bpm (ex: "VTTAE souple 1h30 en Z1/Z2 (95-120 bpm)"). La colonne 'Focus' (3e colonne) doit contenir le thème de la semaine suivi de 2-3 phrases expliquant la logique physiologique et le choix des options retenues.
+"""
+
 # --- FONCTION UTILE : DÉTECTION DE LA SEMAINE EN COURS ---
 def get_current_week_index(df_plan):
     try:
         today = datetime.now()
-        mois_map = {"jan": 1, "fév": 2, "fev": 2, "mar": 3, "avr": 4, "mai": 5, "jui": 6, "juin": 6, "juil": 7, "aoû": 8, "aou": 8, "sep": 9, "oct": 10, "nov": 11, "déc": 12, "dec": 12}
+        mois_map = {
+            "jan": 1, "fév": 2, "fev": 2, "mar": 3, "avr": 4, "mai": 5, "jui": 6,
+            "juin": 6, "juil": 7, "aoû": 8, "aou": 8, "sep": 9, "oct": 10, "nov": 11, "déc": 12, "dec": 12
+        }
         
         for idx, row in df_plan.iterrows():
             date_str = str(row.get('Date', ''))
@@ -38,7 +68,39 @@ def get_current_week_index(df_plan):
                     return idx
     except Exception:
         pass
-    return 0 
+    return len(df_plan) - 1 if not df_plan.empty else 0
+
+# --- FONCTION D'AFFICHAGE D'UNE SEMAINE EN FLEXBOX ---
+def render_week_card(row, is_current, jour_actuel, jours_fr):
+    focus_texte = str(row.get('Focus', 'Non défini'))
+    st.markdown(
+        f"<div style='background-color: #f0f4f8; border-left: 4px solid #1f77b4; padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 14px; color: #222;'>"
+        f"🎯 <b>Logique & Objectif de la semaine :</b> {focus_texte}</div>",
+        unsafe_allow_html=True
+    )
+    
+    html_content = "<div style='display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px;'>"
+    for jour in jours_fr:
+        contenu = str(row.get(jour, "Repos")).replace('\n', '<br>')
+        if is_current and jour == jour_actuel:
+            border_color = "#4CAF50"
+            bg_color = "#e8f5e9"
+            titre_color = "#2e7d32"
+        else:
+            border_color = "#ddd"
+            bg_color = "#ffffff"
+            titre_color = "#333"
+            
+        html_content += (
+            "<div style='flex: 1 1 12%; min-width: 130px; background-color: " + bg_color + 
+            "; padding: 12px; border: 1px solid " + border_color + 
+            "; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);'>"
+            "<div style='color: " + titre_color + "; font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid " + border_color + "; padding-bottom: 4px;'>" + jour + "</div>"
+            "<div style='font-size: 14px; color: #555;'>" + contenu + "</div>"
+            "</div>"
+        )
+    html_content += "</div>"
+    st.write(html_content, unsafe_allow_html=True)
 
 # --- INITIALISATION DE L'IA ---
 try:
@@ -59,7 +121,7 @@ try:
     
     ws_progs = sh.worksheet("Programmes_Renfo")
     st.session_state['df_progs'] = pd.DataFrame(ws_progs.get_all_records())
-except Exception as e:
+except Exception:
     st.session_state['df_renfo'] = pd.DataFrame()
     st.session_state['df_progs'] = pd.DataFrame()
 
@@ -69,6 +131,14 @@ if 'strava_df' not in st.session_state:
         df_plan = pd.DataFrame(ws_plan.get_all_records())
         st.session_state['plan_df'] = df_plan
         st.session_state['plan_text'] = df_plan.to_markdown()
+
+        # Lecture de 1_Progression_Annuelle
+        try:
+            ws_macro = sh.worksheet("1_Progression_Annuelle")
+            df_macro = pd.DataFrame(ws_macro.get_all_records())
+            st.session_state['macro_text'] = df_macro.to_markdown()
+        except Exception:
+            st.session_state['macro_text'] = "Progression annuelle non disponible."
 
         strava_client.CLIENT_ID = st.secrets["STRAVA_CLIENT_ID"]
         strava_client.CLIENT_SECRET = st.secrets["STRAVA_CLIENT_SECRET"]
@@ -85,6 +155,7 @@ if 'strava_df' not in st.session_state:
 if 'strava_df' in st.session_state:
     df = st.session_state['strava_df'].reset_index(drop=True)
     df_plan = st.session_state['plan_df']
+    macro_text = st.session_state.get('macro_text', '')
     
     tab_activites, tab_plan, tab_renfo = st.tabs(["📊 Activités", "📅 Plan", "💪 Renforcement"])
 
@@ -129,7 +200,7 @@ if 'strava_df' in st.session_state:
                 yaxis='y2' if is_bike else 'y',
                 hovertext=df_sport['Nom'],
                 customdata=df_sport['ID'], 
-                offsetgroup=str(i) # Indispensable pour la largeur
+                offsetgroup=str(i)
             ))
             
         fig.update_layout(
@@ -138,12 +209,12 @@ if 'strava_df' in st.session_state:
             bargap=0.05,       
             bargroupgap=0.0,   
             xaxis=dict(
-                type='category',             # Force la largeur uniforme
+                type='category',
                 categoryorder='array',
-                categoryarray=dates_uniques, # Garde le tri chronologique
+                categoryarray=dates_uniques,
                 tickmode='array',
-                tickvals=dates_uniques,      # Vraies dates pour le clic
-                ticktext=labels_courts,      # Affichage court JJ/MM
+                tickvals=dates_uniques,
+                ticktext=labels_courts,
                 title=""
             ),
             yaxis=dict(title="Km (Course / Foot)"),
@@ -157,10 +228,8 @@ if 'strava_df' in st.session_state:
             event = st.plotly_chart(fig, use_container_width=True, on_select="rerun")
             if event and len(event.selection.points) > 0:
                 clicked_id = event.selection.points[0].get('customdata')
-                # Si Plotly renvoie l'ID dans une sous-liste, on extrait la valeur
                 if isinstance(clicked_id, list):
                     clicked_id = clicked_id[0]
-                # Comparaison en texte (str) sur l'index remis à zéro
                 matches = df.index[df['ID'].astype(str) == str(clicked_id)].tolist()
                 if matches:
                     selected_idx = matches[0]
@@ -171,7 +240,6 @@ if 'strava_df' in st.session_state:
         st.write("") 
         if st.button("🧠 Analyser ma charge d'entraînement (IA)", type="secondary", use_container_width=True):
             with st.spinner("Le coach analyse votre physiologie (et vos notes)..."):
-                # Filtre intelligent pour l'IA : on inclut les notes si elles existent
                 cols_ia = ['Date', 'Nom', 'Type', 'Distance (km)', 'Dénivelé (m)']
                 if 'Notes' in df.columns:
                     cols_ia.append('Notes')
@@ -183,11 +251,16 @@ if 'strava_df' in st.session_state:
                     details_avances += f"- Course du {row['Date']} ({row['Nom']}) : {kpi}\n"
                     
                 prompt_analyse = f"""
-                Tu es mon coach d'ultra-trail. Je prépare un 60km/4000D+ pour septembre 2027.
-                Mes 10 dernières activités (inclus mes ressentis/notes) : {df_recent.to_markdown()}
-                Analyse physiologique des 5 dernières : {details_avances}
-                Plan actuel : {st.session_state['plan_text']}
-                Fais une analyse brève (3 points à puces max) de mon état de forme (fatigue, % Z1, respect du plan, retours de sensations).
+                Tu es mon coach d'ultra-trail. Je prépare un 65km/4000D+ pour septembre 2027.
+                Mes zones cardiaques (FC Max 180) :
+                {ZONES_FC_TEXTE}
+                Mes 10 dernières activités (inclus mes ressentis/notes) :
+                {df_recent.to_markdown()}
+                Analyse physiologique des 5 dernières :
+                {details_avances}
+                Plan actuel :
+                {st.session_state['plan_text']}
+                Fais une analyse brève (3 points à puces max) de mon état de forme (fatigue, dérive cardiaque, respect du Z2, respect du plan et retours de sensations).
                 """
                 try:
                     response = client.models.generate_content(model=model, contents=prompt_analyse)
@@ -205,21 +278,17 @@ if 'strava_df' in st.session_state:
             idx = options.index(choix)
             act_id = df.iloc[idx]['ID']
             
-            # 1. Récupération et affichage de la note (Sheet ou rattrapage API Strava)
             note = ""
             if 'Notes' in df.columns:
                 val = df.iloc[idx]['Notes']
                 if pd.notna(val) and str(val).strip().lower() not in ["", "none", "nan"]:
                     note = str(val).strip()
             
-            # Si la note est vide dans le Sheet, on interroge Strava en direct pour cette activité
             if not note:
                 note = strava_client.get_activity_details(act_id)
                 if note:
-                    # Mise à jour en mémoire
                     df.at[idx, 'Notes'] = note
                     st.session_state['strava_df'] = df
-                    # Sauvegarde dans Google Sheets (Colonne J) pour ne plus avoir à la télécharger
                     try:
                         ws_hist = sh.worksheet("Historique_Strava")
                         cell = ws_hist.find(str(act_id))
@@ -231,7 +300,6 @@ if 'strava_df' in st.session_state:
             if note:
                 st.info(f"📝 **Notes Strava :** {note}")
                     
-            # 2. Utilisation de st.toggle pour garder le graphe ouvert en interagissant avec les cases
             if st.toggle("📈 Afficher la télémétrie détaillée (Cardio / Alti / Allure)"):
                 with st.spinner("Calcul de la vitesse ajustée et génération du graphique..."):
                     streams = strava_client.get_activity_streams(act_id)
@@ -242,22 +310,19 @@ if 'strava_df' in st.session_state:
                             'dist': streams['distance']['data']
                         })
                         
-                        # --- CALCUL DE L'ALLURE AJUSTÉE (GAP) ---
                         df_s['delta_d'] = df_s['dist'].diff().fillna(0)
                         df_s['delta_t'] = df_s['time'].diff().fillna(1)
                         
                         if 'altitude' in streams:
                             df_s['alti'] = streams['altitude']['data']
                             df_s['delta_a'] = df_s['alti'].diff().fillna(0)
-                            # Règle Trail : +100m D+ = 1km plat. -100m D- = -330m plat.
                             df_s['delta_d_adj'] = df_s['delta_d'] + df_s['delta_a'].apply(lambda x: x*10 if x > 0 else x*3.3)
                         else:
                             df_s['alti'] = None
                             df_s['delta_d_adj'] = df_s['delta_d']
                             
-                        # Lissage sur 30 secondes de la vitesse (m/s) pour lisser le signal GPS
                         vitesse_brute = (df_s['delta_d'] / df_s['delta_t']).rolling(30, min_periods=1).mean().clip(lower=0.08)
-                        df_s['pace'] = (1000 / (vitesse_brute * 60)).clip(2, 20) # Cap entre 2:00 et 20:00 min/km
+                        df_s['pace'] = (1000 / (vitesse_brute * 60)).clip(2, 20)
                         
                         vitesse_adj = (df_s['delta_d_adj'] / df_s['delta_t']).rolling(30, min_periods=1).mean().clip(lower=0.08)
                         df_s['gap'] = (1000 / (vitesse_adj * 60)).clip(2, 20)
@@ -267,7 +332,6 @@ if 'strava_df' in st.session_state:
                         else:
                             df_s['hr'] = None
 
-                        # --- CRÉATION DE L'INTERFACE GRAPHIQUE ---
                         col_opt, col_graph = st.columns([1, 4])
                         
                         with col_opt:
@@ -290,11 +354,9 @@ if 'strava_df' in st.session_state:
                                 fig_tel.add_trace(go.Scatter(x=df_s['dist']/1000, y=df_s['hr'], mode='lines', name='FC (bpm)', line=dict(color='#d62728', width=2), yaxis='y1'))
 
                             fig_tel.update_layout(
-                                # On crée 10% d'espace vide à gauche pour éviter que les échelles Y ne se superposent
                                 xaxis=dict(title="Distance (km)", domain=[0.1, 1]), 
                                 yaxis=dict(title="FC (bpm)", title_font=dict(color="#d62728"), tickfont=dict(color="#d62728")),
                                 yaxis2=dict(title="Altitude (m)", overlaying="y", side="right", showgrid=False),
-                                # L'échelle de l'allure est inversée (autorange="reversed") pour que la vitesse grimpe vers le haut
                                 yaxis3=dict(title="Allure (min/km)", overlaying="y", side="left", position=0, autorange="reversed", showgrid=False),
                                 margin=dict(l=0, r=0, t=30, b=0),
                                 hovermode="x unified",
@@ -316,111 +378,242 @@ if 'strava_df' in st.session_state:
     with tab_plan:
         st.header("📅 Mon Plan d'Entraînement")
         
+        # --- BANDEAU DE RÉFÉRENCE DES 5 ZONES CARDIAQUES (FC MAX 180) ---
+        st.markdown("""
+        <div style='display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px;'>
+            <div style='flex: 1; min-width: 140px; background: #e3f2fd; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #2196f3; font-size: 13px;'>
+                <b>Z1 Récupération</b> (50-60%)<br>90 – 108 bpm
+            </div>
+            <div style='flex: 1; min-width: 140px; background: #e8f5e9; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #4caf50; font-size: 13px;'>
+                <b>Z2 Endurance Fond.</b> (60-75%)<br>108 – 135 bpm
+            </div>
+            <div style='flex: 1; min-width: 140px; background: #fff8e1; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #ffc107; font-size: 13px;'>
+                <b>Z3 Tempo / Aérobie</b> (75-85%)<br>135 – 153 bpm
+            </div>
+            <div style='flex: 1; min-width: 140px; background: #fff3e0; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #ff9800; font-size: 13px;'>
+                <b>Z4 Seuil</b> (85-92%)<br>153 – 166 bpm
+            </div>
+            <div style='flex: 1; min-width: 140px; background: #ffebee; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #f44336; font-size: 13px;'>
+                <b>Z5 PMA / Max</b> (92-100%)<br>166 – 180 bpm
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
         jours_fr = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
         jour_actuel = jours_fr[datetime.now().weekday()]
         current_week_idx = get_current_week_index(df_plan)
 
-        for index, row in df_plan.iterrows():
+        # 1. Section repliée pour les semaines passées
+        if current_week_idx > 0:
+            with st.expander(f"📜 Historique des semaines passées ({current_week_idx} semaine(s))", expanded=False):
+                for index in range(current_week_idx):
+                    row = df_plan.iloc[index]
+                    focus_court = str(row.get('Focus', ''))[:65] + ("..." if len(str(row.get('Focus', ''))) > 65 else "")
+                    with st.expander(f"{row.get('Semaine', '')} : {row.get('Date', '')} — {focus_court}", expanded=False):
+                        render_week_card(row, is_current=False, jour_actuel=jour_actuel, jours_fr=jours_fr)
+
+        # 2. Affichage de la semaine en cours et des semaines futures
+        for index in range(current_week_idx, len(df_plan)):
+            row = df_plan.iloc[index]
             is_current = (index == current_week_idx)
-            titre_semaine = f"🟢 SEMAINE EN COURS | {row.get('Semaine', '')} : {row.get('Date', '')} - Focus: {row.get('Focus', '')}" if is_current else f"{row.get('Semaine', '')} : {row.get('Date', '')} - Focus: {row.get('Focus', '')}"
-            
+            focus_court = str(row.get('Focus', ''))[:65] + ("..." if len(str(row.get('Focus', ''))) > 65 else "")
+            titre_semaine = (
+                f"🟢 SEMAINE EN COURS | {row.get('Semaine', '')} : {row.get('Date', '')} — {focus_court}"
+                if is_current else
+                f"🔜 {row.get('Semaine', '')} : {row.get('Date', '')} — {focus_court}"
+            )
             with st.expander(titre_semaine, expanded=is_current):
-                html_content = "<div style='display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px;'>"
-                for jour in jours_fr:
-                    contenu = str(row.get(jour, "Repos")).replace('\n', '<br>')
-                    if is_current and jour == jour_actuel:
-                        border_color = "#4CAF50"
-                        bg_color = "#e8f5e9"
-                        titre_color = "#2e7d32"
-                    else:
-                        border_color = "#ddd"
-                        bg_color = "#ffffff"
-                        titre_color = "#333"
-                        
-                    html_content += "<div style='flex: 1 1 12%; min-width: 130px; background-color: " + bg_color + "; padding: 12px; border: 1px solid " + border_color + "; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);'>"
-                    html_content += "<div style='color: " + titre_color + "; font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid " + border_color + "; padding-bottom: 4px;'>" + jour + "</div>"
-                    html_content += "<div style='font-size: 14px; color: #555;'>" + contenu + "</div>"
-                    html_content += "</div>"
-                    
-                html_content += "</div>"
-                st.write(html_content, unsafe_allow_html=True)
+                render_week_card(row, is_current=is_current, jour_actuel=jour_actuel, jours_fr=jours_fr)
 
         st.divider()
         
-        # --- AJUSTEMENT DU PLAN ---
-        st.header("💬 Ajustement du Plan")
-        commentaires = st.text_area("Contraintes ou sensations de la semaine :", placeholder="Ex: Déplacement jeudi.")
+        # ==========================================
+        # SECTION GESTION & GÉNÉRATION DU PLAN
+        # ==========================================
+        st.header("💬 Pilotage & Évolution du Plan")
         
-        if st.button("🤖 Générer la semaine suivante et METTRE À JOUR le Sheet", type="primary", use_container_width=True):
-            date_actuelle = datetime.now().strftime("%Y-%m-%d")
+        mode_action = st.radio(
+            "Que souhaitez-vous faire ?",
+            ["🛠️ Ajuster une semaine existante", "➕ Générer et ajouter les 4 semaines suivantes"],
+            horizontal=True
+        )
+        
+        date_actuelle = datetime.now().strftime("%Y-%m-%d")
+        cols_ia = ['Date', 'Nom', 'Type', 'Distance (km)', 'Dénivelé (m)', 'Temps (min)', 'FC Moyenne']
+        if 'Notes' in df.columns:
+            cols_ia.append('Notes')
+        strava_text = df.head(12)[cols_ia].to_markdown()
+
+        # ------------------------------------------------------------------
+        # ACTION 1 : AJUSTER UNE SEMAINE EXISTANTE
+        # ------------------------------------------------------------------
+        if mode_action == "🛠️ Ajuster une semaine existante":
+            liste_semaines = [f"Ligne {i+2} — {r.get('Semaine', '')} ({r.get('Date', '')})" for i, r in df_plan.iterrows()]
+            semaine_choisie = st.selectbox(
+                "Sélectionnez la semaine à ajuster :",
+                liste_semaines,
+                index=min(current_week_idx, max(0, len(liste_semaines)-1))
+            )
+            ligne_cible_defaut = liste_semaines.index(semaine_choisie) + 2 if liste_semaines else 2
             
-            # Injection des notes dans le prompt si elles existent
-            cols_ia = ['Date', 'Nom', 'Type', 'Distance (km)']
-            if 'Notes' in df.columns:
-                cols_ia.append('Notes')
-            strava_text = df.head(10)[cols_ia].to_markdown()
+            commentaires = st.text_area(
+                "Contraintes de la semaine, fatigue ou envies (ex: Retour travail 40km ce vendredi, déplacement jeudi...) :",
+                placeholder="Ex: Déplacement pro jeudi, envie de placer le retour à pied 40km/1000D+ vendredi."
+            )
             
-            prompt_ajustement = f"""
-            Tu es mon coach d'ultra-trail. Objectif 60km/4000D+ sept 2027.
-            Aujourd'hui nous sommes le : {date_actuelle} (utilise cette date absolue pour comprendre "cette semaine", "demain", etc.).
+            prompt_ajustement = f"""Tu es mon coach d'ultra-trail. Objectif : 60km / 4000m D+ en septembre 2027.
+Aujourd'hui nous sommes le : {date_actuelle}.
+
+Mes 5 zones de fréquence cardiaque (FC Max = 180 bpm) :
+{ZONES_FC_TEXTE}
+
+Règles logistiques et physiologiques impératives :
+{REGLES_LOGISTIQUES_COACH}
+
+Fil conducteur annuel (1_Progression_Annuelle) :
+{macro_text}
+
+Mes 12 dernières sorties Strava (incluant mes notes privées) :
+{strava_text}
+
+Historique et plan actuel complet :
+{st.session_state['plan_text']}
+
+Semaine ciblée à modifier : {semaine_choisie} (Ligne {ligne_cible_defaut} dans le Google Sheet).
+Contraintes ou demandes du coureur :
+{commentaires if commentaires else "Optimise cette semaine selon ma forme actuelle et les règles logistiques."}
+
+Tâche :
+1. Ajuste la semaine sélectionnée (ligne {ligne_cible_defaut}) en respectant mes contraintes, la périodisation annuelle et mes règles logistiques (Foot lundi, Vélotaf / Retour à pied 40km 1000D+ le vendredi, Sortie longue le samedi).
+2. Dans la colonne 'Focus', rédige le thème suivi d'une explication claire (2 à 3 phrases) de la logique et du but physiologique de la semaine.
+3. Indique systématiquement les zones cardiaques (Z1 à Z5 + plage en bpm) dans chaque séance d'endurance.
+
+RÈGLE ABSOLUE : Réponds uniquement en JSON strict avec deux clés :
+- "ligne" : {ligne_cible_defaut}
+- "donnees" : un tableau de 10 chaînes de caractères correspondant EXACTEMENT aux colonnes [Semaine, Date, Focus, Lundi, Mardi, Mercredi, Jeudi, Vendredi, Samedi, Dimanche].
+Aucun texte avant ou après le JSON."""
+
+            if st.button("🤖 Ajuster la semaine sélectionnée et METTRE À JOUR le Sheet", type="primary", use_container_width=True):
+                with st.spinner("Ajustement de la semaine en cours..."):
+                    try:
+                        for essai in range(3):
+                            try:
+                                response = client.models.generate_content(model=model, contents=prompt_ajustement)
+                                break 
+                            except Exception as e:
+                                if essai < 2:
+                                    time.sleep(4)
+                                else:
+                                    raise e
+                        
+                        rep_texte = response.text.replace('```json', '').replace('```', '').strip()
+                        brut_json = json.loads(rep_texte)
+                        
+                        ligne_cible = brut_json.get("ligne", ligne_cible_defaut)
+                        donnees = brut_json.get("donnees", [])
+                        while len(donnees) < 10:
+                            donnees.append("")
+                        donnees = donnees[:10] 
+                        
+                        ws_plan = sh.worksheet("5_Plan_4_Semaines")
+                        ws_plan.update(values=[donnees], range_name=f"A{ligne_cible}:J{ligne_cible}")
+                        
+                        st.success(f"✅ Semaine mise à jour avec succès sur la ligne {ligne_cible} !")
+                        df_plan = pd.DataFrame(ws_plan.get_all_records())               
+                        st.session_state['plan_df'] = df_plan                           
+                        st.session_state['plan_text'] = df_plan.to_markdown()
+                        time.sleep(2)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Erreur lors de la mise à jour : {e}")
+
+            with st.expander("ℹ️ Voir le prompt de base envoyé à l'IA (Ajustement)", expanded=False):
+                st.code(prompt_ajustement, language="text")
+
+        # ------------------------------------------------------------------
+        # ACTION 2 : GÉNÉRER ET AJOUTER LES 4 SEMAINES SUIVANTES
+        # ------------------------------------------------------------------
+        else:
+            nb_semaines_actuelles = len(df_plan)
+            derniere_semaine_info = df_plan.iloc[-1].to_dict() if not df_plan.empty else {}
             
-            Strava (inclus mes notes) :\n{strava_text}\n
-            Plan actuel :\n{st.session_state['plan_text']}\n
-            Contraintes exceptionnelles :\n{commentaires}\n
+            consignes_bloc = st.text_area(
+                "Indications ou contraintes pour le prochain bloc de 4 semaines (optionnel) :",
+                placeholder="Ex: Intégrer un retour du travail à pied (40km/1000D+) un vendredi du bloc, vacances la 3e semaine..."
+            )
             
-            Tâche :
-            1. Regarde la date d'aujourd'hui et identifie à quelle semaine du plan elle correspond.
-            2. Ajuste les séances d'entraînement en respectant ma demande avec précision sur les bons jours. Prends en compte mes notes privées Strava.
-            3. Renvoie la ligne complète modifiée pour cette semaine précise.
-            
-            RÈGLE ABSOLUE : Formate ta réponse en JSON strict avec deux clés :
-            - "ligne" : un entier (2 pour Semaine 1, 3 pour Semaine 2, etc).
-            - "donnees" : un tableau de 10 éléments correspondant EXACTEMENT aux colonnes (Semaine, Date, Focus, Lundi, Mardi, Mercredi, Jeudi, Vendredi, Samedi, Dimanche).
-            
-            Exemple exact attendu:
-            {{"ligne": 4, "donnees": ["Semaine 3", "26 Oct - 1 Nov", "Endurance", "Repos", "Rehab", "Footing 45min", "Repos", "Vélotaf 1h", "Trail 2h", "Repos"]}}
-            Aucun texte avant ou après le JSON.
-            """
-            
-            with st.spinner("Analyse du calendrier et ajustement du plan en cours..."):
-                try:
-                    for essai in range(3):
-                        try:
-                            response = client.models.generate_content(model=model, contents=prompt_ajustement)
-                            break 
-                        except Exception as e:
-                            if essai < 2:
-                                time.sleep(4)
-                            else:
-                                raise e
-                    
-                    rep_texte = response.text.replace('```json', '').replace('```', '').strip()
-                    brut_json = json.loads(rep_texte)
-                    
-                    ligne_cible = brut_json.get("ligne", 2)
-                    donnees = brut_json.get("donnees", [])
-                    while len(donnees) < 10:
-                        donnees.append("")
-                    donnees = donnees[:10] 
-                    
-                    ws_plan = sh.worksheet("5_Plan_4_Semaines")
-                    ws_plan.update(values=[donnees], range_name=f"A{ligne_cible}:J{ligne_cible}")
-                    
-                    st.success(f"✅ Plan mis à jour sur la ligne {ligne_cible} !")
-                    df_plan = pd.DataFrame(ws_plan.get_all_records())               
-                    st.session_state['plan_df'] = df_plan                           
-                    st.session_state['plan_text'] = df_plan.to_markdown()
-                    
-                    st.info(f"ℹ️ **Prompt envoyé à l'IA :**\n\n```text\n{prompt_ajustement}\n```")
-                    
-                    time.sleep(3)
-                    st.rerun()
-                    
-                except json.JSONDecodeError:
-                    st.error("❌ Le formatage JSON a échoué.")
-                    st.write(response.text)
-                except Exception as e:
-                    st.error(f"❌ Erreur : {e}")
+            prompt_generation_4 = f"""Tu es mon coach d'ultra-trail. Objectif : 60km / 4000m D+ en septembre 2027.
+Aujourd'hui nous sommes le : {date_actuelle}.
+
+Mes 5 zones de fréquence cardiaque (FC Max = 180 bpm) :
+{ZONES_FC_TEXTE}
+
+Règles logistiques et physiologiques impératives :
+{REGLES_LOGISTIQUES_COACH}
+
+Fil conducteur annuel (1_Progression_Annuelle) :
+{macro_text}
+
+Mes 12 dernières sorties Strava (incluant mes notes privées) :
+{strava_text}
+
+Historique complet du plan jusqu'à la dernière semaine planifiée ({derniere_semaine_info.get('Semaine', '')} - {derniere_semaine_info.get('Date', '')}) :
+{st.session_state['plan_text']}
+
+Indications particulières du coureur pour ce nouveau bloc de 4 semaines :
+{consignes_bloc if consignes_bloc else "Construis une progression logique sur 4 semaines (ex: 3 semaines de charge progressive + 1 semaine d'assimilation) alignée sur 1_Progression_Annuelle."}
+
+Tâche :
+1. Génère les 4 semaines qui suivent immédiatement la dernière semaine du plan actuel (numérote-les Semaine {nb_semaines_actuelles + 1} à Semaine {nb_semaines_actuelles + 4}, et calcule exactement les dates du lundi au dimanche au format 'JJ Mmm - JJ Mmm').
+2. Pour chaque semaine, rédige dans la colonne 'Focus' le titre du bloc suivi d'une explication claire (2 à 3 phrases) de la logique et du but physiologique des entraînements de la semaine.
+3. Indique systématiquement les zones cardiaques (Z1 à Z5 + plage en bpm) pour chaque séance d'endurance, place le football le lundi, privilégie le vendredi pour le vélotaf ou le retour à pied (40km/1000D+), et place les sorties longues le samedi.
+
+RÈGLE ABSOLUE : Réponds uniquement en JSON strict avec une clé "semaines" contenant une liste de 4 listes (chacune ayant exactement 10 éléments : [Semaine, Date, Focus, Lundi, Mardi, Mercredi, Jeudi, Vendredi, Samedi, Dimanche]).
+Exemple de structure :
+{{"semaines": [["Semaine 5", "16 Nov - 22 Nov", "Développement Aérobie : Logique détaillée...", "Football (Z4/Z5)", "...", "...", "...", "...", "...", "..."], [...], [...], [...]]}}
+Aucun texte avant ou après le JSON."""
+
+            if st.button("🚀 Générer et AJOUTER les 4 semaines suivantes au Sheet", type="primary", use_container_width=True):
+                with st.spinner("Création du nouveau bloc de 4 semaines par le coach IA..."):
+                    try:
+                        for essai in range(3):
+                            try:
+                                response = client.models.generate_content(model=model, contents=prompt_generation_4)
+                                break 
+                            except Exception as e:
+                                if essai < 2:
+                                    time.sleep(4)
+                                else:
+                                    raise e
+                        
+                        rep_texte = response.text.replace('```json', '').replace('```', '').strip()
+                        brut_json = json.loads(rep_texte)
+                        nouvelles_semaines = brut_json.get("semaines", [])
+                        
+                        lignes_propres = []
+                        for sem in nouvelles_semaines:
+                            while len(sem) < 10:
+                                sem.append("")
+                            lignes_propres.append(sem[:10])
+                            
+                        if lignes_propres:
+                            ws_plan = sh.worksheet("5_Plan_4_Semaines")
+                            ws_plan.append_rows(lignes_propres)
+                            
+                            st.success(f"✅ {len(lignes_propres)} nouvelles semaines ajoutées avec succès à la suite du plan !")
+                            df_plan = pd.DataFrame(ws_plan.get_all_records())               
+                            st.session_state['plan_df'] = df_plan                           
+                            st.session_state['plan_text'] = df_plan.to_markdown()
+                            time.sleep(2)
+                            st.rerun()
+                        else:
+                            st.error("L'IA n'a renvoyé aucune semaine valide.")
+                    except Exception as e:
+                        st.error(f"❌ Erreur lors de la génération : {e}")
+
+            with st.expander("ℹ️ Voir le prompt de base envoyé à l'IA (Génération 4 semaines)", expanded=False):
+                st.code(prompt_generation_4, language="text")
+
 
     # ==========================================
     # ONGLET 3 : RENFORCEMENT 
@@ -471,7 +664,7 @@ if 'strava_df' in st.session_state:
                                 st.video(media_url)
                             else:
                                 st.image(media_url, use_container_width=True)
-                        except:
+                        except Exception:
                             st.warning("Média introuvable.")
                             
                 with col_infos:

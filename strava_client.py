@@ -114,22 +114,29 @@ def get_activity_streams(act_id):
     return None
     
 def get_advanced_kpis(act_id):
+    """Calcule la répartition sur 5 zones (FC Max 180) et la dérive cardiaque"""
     streams = get_activity_streams(act_id)
     if not streams or 'heartrate' not in streams:
         return "Pas de données cardio"
         
     hr_data = streams['heartrate']['data']
     if len(hr_data) < 10:
-        notes = "Données insuffisantes"
-        return notes
+        return "Données insuffisantes"
 
-    z1 = sum(1 for h in hr_data if h < 140) / len(hr_data) * 100
-    z2 = sum(1 for h in hr_data if 140 <= h <= 160) / len(hr_data) * 100
-    z3 = sum(1 for h in hr_data if h > 160) / len(hr_data) * 100
+    n = len(hr_data)
+    z1 = sum(1 for h in hr_data if h < 108) / n * 100
+    z2 = sum(1 for h in hr_data if 108 <= h < 135) / n * 100
+    z3 = sum(1 for h in hr_data if 135 <= h < 153) / n * 100
+    z4 = sum(1 for h in hr_data if 153 <= h < 166) / n * 100
+    z5 = sum(1 for h in hr_data if h >= 166) / n * 100
 
-    mid = len(hr_data) // 2
+    mid = n // 2
     hr_first = sum(hr_data[:mid]) / mid if mid > 0 else 0
-    hr_second = sum(hr_data[mid:]) / (len(hr_data)-mid) if mid > 0 else 0
+    hr_second = sum(hr_data[mid:]) / (n - mid) if mid > 0 else 0
     derive = hr_second - hr_first
 
-    return f"Cardio: {z1:.0f}% en Z1(Aérobie), {z2:.0f}% en Z2(Seuil), {z3:.0f}% en Z3(Intense). Dérive FC: {'+' if derive > 0 else ''}{derive:.1f} bpm entre le début et la fin."
+    return (
+        f"Cardio (FCMax 180): Z1(<108): {z1:.0f}%, Z2(108-135): {z2:.0f}%, "
+        f"Z3(135-153): {z3:.0f}%, Z4(153-166): {z4:.0f}%, Z5(>166): {z5:.0f}%. "
+        f"Dérive FC: {'+' if derive > 0 else ''}{derive:.1f} bpm."
+    )
