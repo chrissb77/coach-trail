@@ -5,6 +5,8 @@ import strava_client
 import sheets_client
 import json
 import time
+import os
+import requests
 import streamlit.components.v1 as components
 from datetime import datetime
 import plotly.graph_objects as go
@@ -102,6 +104,45 @@ def render_week_card(row, is_current, jour_actuel, jours_fr):
     html_content += "</div>"
     st.write(html_content, unsafe_allow_html=True)
 
+# --- VÉRIFICATION DISPONIBILITÉ MÉDIA RENFORCEMENT ---
+@st.cache_data(ttl=300, show_spinner=False)
+def verifier_disponibilite_media(media_url):
+    if pd.isna(media_url):
+        return "❌ Non renseigné"
+    media_str = str(media_url).strip()
+    if not media_str or media_str.lower() in ["nan", "none"]:
+        return "❌ Non renseigné"
+    if media_str.startswith(("http://", "https://")):
+        try:
+            headers = {"User-Agent": "Mozilla/5.0"}
+            r = requests.head(media_str, allow_redirects=True, timeout=2.5, headers=headers)
+            if r.status_code >= 400:
+                r = requests.get(media_str, stream=True, timeout=2.5, headers=headers)
+            return "✅ Disponible" if r.status_code < 400 else "❌ Introuvable (Web)"
+        except Exception:
+            return "❌ Introuvable (Web)"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    if os.path.isfile(media_str) or os.path.isfile(os.path.join(base_dir, media_str)):
+        return "✅ Disponible"
+    return "❌ Fichier introuvable"
+
+def extraire_tags_materiel(serie_materiel):
+    """Extrait la liste triée des équipements uniques à partir d'une série pandas."""
+    ignores = {"", "nan", "none", "aucun", "sans", "poids du corps", "non"}
+    items = set()
+    for val in serie_materiel.dropna().astype(str):
+        for part in val.split(','):
+            p = part.strip()
+            if p.lower() not in ignores:
+                items.add(p)
+    return sorted(items)
+
+def est_sans_materiel(val):
+    if pd.isna(val):
+        return True
+    s = str(val).strip().lower()
+    return s in {"", "nan", "none", "aucun", "sans", "poids du corps", "non"}
+
 # --- INITIALISATION DE L'IA ---
 try:
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
@@ -117,13 +158,26 @@ sh = sheets_client.connect_to_sheets()
 
 try:
     ws_renfo = sh.worksheet("Bibliotheque_Renfo")
-    st.session_state['df_renfo'] = pd.DataFrame(ws_renfo.get_all_records())
+    df_renfo_loaded = pd.DataFrame(ws_renfo.get_all_records())
+    if 'Matériel' in df_renfo_loaded.columns and 'Materiel' not in df_renfo_loaded.columns:
+        df_renfo_loaded = df_renfo_loaded.rename(columns={'Matériel': 'Materiel'})
+    if not df_renfo_loaded.empty and 'Materiel' not in df_renfo_loaded.columns:
+        df_renfo_loaded['Materiel'] = ""
+    st.session_state['df_renfo'] = df_renfo_loaded
     
     ws_progs = sh.worksheet("Programmes_Renfo")
     st.session_state['df_progs'] = pd.DataFrame(ws_progs.get_all_records())
 except Exception:
     st.session_state['df_renfo'] = pd.DataFrame()
     st.session_state['df_progs'] = pd.DataFrame()
+
+if 'derniere_analyse' not in st.session_state:
+    try:
+        ws_analyse = sh.worksheet("Analyses_IA")
+        records_analyse = ws_analyse.get_all_records()
+        st.session_state['derniere_analyse'] = records_analyse[-1] if records_analyse else None
+    except Exception:
+        st.session_state['derniere_analyse'] = None
 
 if 'strava_df' not in st.session_state:
     with st.spinner("Synchronisation avec Google Sheets et Strava..."):
@@ -264,10 +318,25 @@ if 'strava_df' in st.session_state:
                 """
                 try:
                     response = client.models.generate_content(model=model, contents=prompt_analyse)
-                    st.info("🧠 **Diagnostic du Coach :**")
-                    st.write(response.text)
+                    date_analyse = datetime.now().strftime("%d/%m/%Y à %H:%M")
+                    st.session_state['derniere_analyse'] = {'Date': date_analyse, 'Analyse': response.text}
+                    try:
+                        try:
+                            ws_analyse = sh.worksheet("Analyses_IA")
+                        except Exception:
+                            ws_analyse = sh.add_worksheet(title="Analyses_IA", rows="200", cols="2")
+                            ws_analyse.append_row(["Date", "Analyse"])
+                        ws_analyse.append_row([date_analyse, response.text])
+                    except Exception as e_sheet:
+                        st.warning(f"Analyse non sauvegardée dans le Google Sheet : {e_sheet}")
+                    st.success("✅ Nouvelle analyse générée et sauvegardée dans l'onglet 'Analyses_IA' du Google Sheet !")
                 except Exception as e:
                     st.error(f"Erreur d'analyse : {e}")
+
+        if st.session_state.get('derniere_analyse'):
+            da = st.session_state['derniere_analyse']
+            with st.expander(f"🧠 Dernier diagnostic du Coach (sauvegardé le {da.get('Date', '')})", expanded=True):
+                st.write(da.get('Analyse', ''))
 
         # --- DÉTAIL DE L'ACTIVITÉ ---
         st.markdown("---")
@@ -668,6 +737,9 @@ Aucun texte avant ou après le JSON."""
                             st.warning("Média introuvable.")
                             
                 with col_infos:
+                    mat_exo = str(exo_actuel.get('Materiel', '')).strip()
+                    if not est_sans_materiel(mat_exo):
+                        st.markdown(f"🧰 **Matériel :** `{mat_exo}`")
                     st.info(f"**Consignes :**\n{exo_actuel['Description']}")
                     quantite = int(exo_actuel['Duree_Defaut'])
                     type_mesure = str(exo_actuel.get('Type_Mesure', 'Temps')).strip().lower()
@@ -767,6 +839,7 @@ Aucun texte avant ou après le JSON."""
 
                 toutes_zones = df_renfo['Zone'].astype(str).str.split(',').explode().str.strip()
                 zones_dispos = sorted([z for z in toutes_zones.unique() if z != ""])
+                materiels_dispos = extraire_tags_materiel(df_renfo['Materiel']) if 'Materiel' in df_renfo.columns else []
 
                 col_mode, col_tours = st.columns([2, 1])
                 with col_mode:
@@ -798,7 +871,39 @@ Aucun texte avant ou après le JSON."""
                         st.session_state['seance_brouillon'] = pd.concat([base] * nb_tours, ignore_index=True)
                         
                 elif mode == "Sélection Manuelle":
-                    exos_choisis = st.multiselect("Choisissez vos exercices pour 1 tour :", df_renfo['Nom'].tolist())
+                    col_f_z, col_f_m = st.columns(2)
+                    with col_f_z:
+                        zones_sel = st.multiselect("🎯 Filtrer par Zone :", zones_dispos, placeholder="Toutes les zones")
+                    with col_f_m:
+                        options_mat_filtre = ["Sans matériel (Poids du corps)"] + materiels_dispos
+                        mat_sel = st.multiselect("🧰 Filtrer par Matériel :", options_mat_filtre, placeholder="Tout le matériel")
+
+                    df_manuel_filtre = df_renfo.copy()
+                    if zones_sel:
+                        mask_z = df_manuel_filtre['Zone'].astype(str).apply(
+                            lambda val: any(z.lower() in [p.strip().lower() for p in val.split(',')] for z in zones_sel)
+                        )
+                        df_manuel_filtre = df_manuel_filtre[mask_z]
+                    if mat_sel:
+                        inclure_sans = "Sans matériel (Poids du corps)" in mat_sel
+                        tags_mat_cibles = [m.lower() for m in mat_sel if m != "Sans matériel (Poids du corps)"]
+                        def match_materiel(val):
+                            if est_sans_materiel(val):
+                                return inclure_sans
+                            parts = [p.strip().lower() for p in str(val).split(',')]
+                            return any(t in parts for t in tags_mat_cibles)
+                        df_manuel_filtre = df_manuel_filtre[df_manuel_filtre['Materiel'].apply(match_materiel)]
+
+                    deja_choisis = st.session_state.get("multiselect_exos_manuels", [])
+                    noms_filtres = df_manuel_filtre['Nom'].tolist()
+                    options_multiselect = list(dict.fromkeys([n for n in deja_choisis if n in df_renfo['Nom'].values] + noms_filtres))
+
+                    st.caption(f"🔎 {len(noms_filtres)} exercice(s) correspondant aux filtres actifs.")
+                    exos_choisis = st.multiselect(
+                        "Choisissez vos exercices pour 1 tour :",
+                        options_multiselect,
+                        key="multiselect_exos_manuels"
+                    )
                     if st.button("Valider la séance") and exos_choisis:
                         base = df_renfo[df_renfo['Nom'].isin(exos_choisis)]
                         st.session_state['seance_brouillon'] = pd.concat([base] * nb_tours, ignore_index=True)
@@ -843,7 +948,13 @@ Aucun texte avant ou après le JSON."""
                 if 'seance_brouillon' in st.session_state and not st.session_state['seance_brouillon'].empty:
                     seance_prete = st.session_state['seance_brouillon']
                     st.success(f"✅ Séance prête : {len(seance_prete)} exercices.")
-                    st.dataframe(seance_prete[['Nom', 'Zone', 'Duree_Defaut', 'Description']], hide_index=True, use_container_width=True)
+                    materiels_seance = extraire_tags_materiel(seance_prete['Materiel']) if 'Materiel' in seance_prete.columns else []
+                    if materiels_seance:
+                        st.warning(f"🧰 **Matériel nécessaire pour cette séance :** {', '.join(materiels_seance)}")
+                    else:
+                        st.info("🧰 **Matériel nécessaire pour cette séance :** Aucun (Poids du corps uniquement)")
+                    cols_seance = [c for c in ['Nom', 'Zone', 'Materiel', 'Duree_Defaut', 'Description'] if c in seance_prete.columns]
+                    st.dataframe(seance_prete[cols_seance], hide_index=True, use_container_width=True)
                     if st.button("▶️ DÉMARRER L'ENTRAÎNEMENT", type="primary", use_container_width=True):
                         st.session_state['seance_en_cours'] = seance_prete
                         st.session_state['current_exo_index'] = 0
@@ -851,3 +962,85 @@ Aucun texte avant ou après le JSON."""
                         st.rerun()
         else:
             st.info("Pour activer ce module, créez l'onglet 'Bibliotheque_Renfo'.")
+
+        # --- ESPACE BIBLIOTHÈQUE (Masqué par défaut et masqué pendant une séance) ---
+        if 'df_renfo' in st.session_state and not st.session_state['df_renfo'].empty and 'seance_en_cours' not in st.session_state:
+            df_renfo_biblio = st.session_state['df_renfo'].copy()
+            st.markdown("---")
+            with st.expander(f"📚 Bibliothèque complète des exercices ({len(df_renfo_biblio)} exercices)", expanded=False):
+                if 'Media_URL' in df_renfo_biblio.columns:
+                    df_renfo_biblio['Statut Média'] = df_renfo_biblio['Media_URL'].apply(verifier_disponibilite_media)
+                else:
+                    df_renfo_biblio['Statut Média'] = "❌ Non renseigné"
+
+                nb_total_exos = len(df_renfo_biblio)
+                nb_media_ok = int((df_renfo_biblio['Statut Média'] == "✅ Disponible").sum())
+                nb_media_ko = nb_total_exos - nb_media_ok
+
+                col_m1, col_m2, col_m3, col_m4 = st.columns([1, 1, 1, 1])
+                col_m1.metric("Total exercices", nb_total_exos)
+                col_m2.metric("Médias disponibles", f"{nb_media_ok} ✅")
+                col_m3.metric("Médias manquants", f"{nb_media_ko} ❌")
+                with col_m4:
+                    st.write("")
+                    if st.button("🔄 Actualiser la vérification", use_container_width=True):
+                        verifier_disponibilite_media.clear()
+                        st.rerun()
+
+                col_f_zone, col_f_mat, col_f_statut = st.columns(3)
+                with col_f_zone:
+                    toutes_zones_biblio = df_renfo_biblio['Zone'].astype(str).str.split(',').explode().str.strip() if 'Zone' in df_renfo_biblio.columns else pd.Series(dtype=str)
+                    zones_biblio = sorted([z for z in toutes_zones_biblio.unique() if z != ""])
+                    filtre_zone = st.selectbox("Filtrer par zone :", ["Toutes les zones"] + zones_biblio, key="biblio_filtre_zone")
+                with col_f_mat:
+                    mats_biblio = extraire_tags_materiel(df_renfo_biblio['Materiel']) if 'Materiel' in df_renfo_biblio.columns else []
+                    filtre_mat = st.selectbox("Filtrer par matériel :", ["Tout", "Sans matériel"] + mats_biblio, key="biblio_filtre_mat")
+                with col_f_statut:
+                    filtre_statut = st.selectbox(
+                        "Filtrer par statut média :",
+                        ["Tous", "✅ Disponible uniquement", "❌ Manquant / Introuvable uniquement"],
+                        key="biblio_filtre_statut"
+                    )
+
+                df_affiche = df_renfo_biblio.copy()
+                if filtre_zone != "Toutes les zones" and 'Zone' in df_affiche.columns:
+                    df_affiche = df_affiche[df_affiche['Zone'].astype(str).str.contains(filtre_zone, case=False, na=False, regex=False)]
+                if filtre_mat != "Tout" and 'Materiel' in df_affiche.columns:
+                    if filtre_mat == "Sans matériel":
+                        df_affiche = df_affiche[df_affiche['Materiel'].apply(est_sans_materiel)]
+                    else:
+                        df_affiche = df_affiche[df_affiche['Materiel'].astype(str).str.contains(filtre_mat, case=False, na=False, regex=False)]
+                if filtre_statut == "✅ Disponible uniquement":
+                    df_affiche = df_affiche[df_affiche['Statut Média'] == "✅ Disponible"]
+                elif filtre_statut == "❌ Manquant / Introuvable uniquement":
+                    df_affiche = df_affiche[df_affiche['Statut Média'] != "✅ Disponible"]
+
+                colonnes_ordre = ['Nom', 'Zone', 'Materiel', 'Statut Média', 'Type_Mesure', 'Duree_Defaut', 'Description', 'Media_URL']
+                colonnes_finales = [c for c in colonnes_ordre if c in df_affiche.columns] + [c for c in df_affiche.columns if c not in colonnes_ordre]
+
+                st.dataframe(df_affiche[colonnes_finales], use_container_width=True, hide_index=True)
+
+                exo_apercu = st.selectbox(
+                    "👁️ Tester / Prévisualiser le média d'un exercice :",
+                    ["— Aucun —"] + df_affiche['Nom'].tolist() if 'Nom' in df_affiche.columns else ["— Aucun —"],
+                    key="biblio_apercu_exo"
+                )
+                if exo_apercu != "— Aucun —":
+                    ligne_exo = df_affiche[df_affiche['Nom'] == exo_apercu].iloc[0]
+                    col_prev_media, col_prev_desc = st.columns([1, 1])
+                    with col_prev_media:
+                        url_test = str(ligne_exo.get('Media_URL', '')).strip()
+                        if ligne_exo.get('Statut Média') == "✅ Disponible" and url_test:
+                            try:
+                                if url_test.lower().endswith('.mp4'):
+                                    st.video(url_test)
+                                else:
+                                    st.image(url_test, use_container_width=True)
+                            except Exception:
+                                st.warning("Impossible de charger l'aperçu du média.")
+                        else:
+                            st.warning(f"Média indisponible ({ligne_exo.get('Statut Média', 'Inconnu')}) — Chemin/URL : `{url_test or 'Vide'}`")
+                    with col_prev_desc:
+                        st.markdown(f"**{ligne_exo.get('Nom', '')}** ({ligne_exo.get('Zone', '')})")
+                        st.info(f"**Consignes :**\n{ligne_exo.get('Description', '')}")
+                        st.caption(f"Mesure : {ligne_exo.get('Duree_Defaut', '')} ({ligne_exo.get('Type_Mesure', 'Temps')}) | Média : `{url_test or 'Non renseigné'}`")
