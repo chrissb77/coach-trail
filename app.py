@@ -836,6 +836,14 @@ Aucun texte avant ou après le JSON."""
                 def reset_brouillon():
                     if 'seance_brouillon' in st.session_state:
                         del st.session_state['seance_brouillon']
+                    if 'routine_base' in st.session_state:
+                        del st.session_state['routine_base']
+
+                def reset_tours():
+                    if 'seance_brouillon' in st.session_state and 'routine_base' not in st.session_state:
+                        del st.session_state['seance_brouillon']
+                    if 'seance_brouillon' in st.session_state:
+                        del st.session_state['seance_brouillon']
 
                 toutes_zones = df_renfo['Zone'].astype(str).str.split(',').explode().str.strip()
                 zones_dispos = sorted([z for z in toutes_zones.unique() if z != ""])
@@ -850,7 +858,7 @@ Aucun texte avant ou après le JSON."""
                         on_change=reset_brouillon
                     )
                 with col_tours:
-                    nb_tours = st.number_input("🔄 Nombre de tours (circuits) :", min_value=1, max_value=10, value=1, on_change=reset_brouillon)
+                    nb_tours = st.number_input("🔄 Nombre de tours (circuits) :", min_value=1, max_value=10, value=1, on_change=reset_tours)
                     
                 st.markdown("---")
                 
@@ -931,7 +939,7 @@ Aucun texte avant ou après le JSON."""
                 elif mode == "Programme Prédéfini":
                     if 'df_progs' in st.session_state and not st.session_state['df_progs'].empty:
                         liste_progs = st.session_state['df_progs']['Nom_Programme'].tolist()
-                        prog_choisi = st.selectbox("Choisissez votre routine :", liste_progs)
+                        prog_choisi = st.selectbox("Choisissez votre routine :", liste_progs, on_change=reset_brouillon)
                         
                         if st.button("Charger la routine prédéfinie"):
                             exos_str = st.session_state['df_progs'].loc[st.session_state['df_progs']['Nom_Programme'] == prog_choisi, 'Exercices'].values[0]
@@ -942,9 +950,35 @@ Aucun texte avant ou après le JSON."""
                                 if not match.empty:
                                     exos_list.append(match.iloc[0])
                             if exos_list:
-                                base = pd.DataFrame(exos_list)
+                                base = pd.DataFrame(exos_list).reset_index(drop=True)
+                                st.session_state['routine_base'] = base
+                                for idx_r in range(len(base)):
+                                    st.session_state[f"routine_exo_actif_{prog_choisi}_{idx_r}"] = True
                                 st.session_state['seance_brouillon'] = pd.concat([base] * nb_tours, ignore_index=True)
                 
+                if mode == "Programme Prédéfini" and 'routine_base' in st.session_state and not st.session_state['routine_base'].empty:
+                    df_rb = st.session_state['routine_base']
+                    st.markdown("##### 🎛️ Exercices de la routine (décochez pour désactiver aujourd'hui) :")
+                    cols_chk = st.columns(2)
+                    indices_actifs = []
+                    for idx_r, row_r in df_rb.iterrows():
+                        zone_r = str(row_r.get('Zone', '')).strip()
+                        mat_r = str(row_r.get('Materiel', '')).strip()
+                        detail_r = f" ({zone_r}" + (f" • 🧰 {mat_r})" if not est_sans_materiel(mat_r) else ")") if zone_r else (f" (🧰 {mat_r})" if not est_sans_materiel(mat_r) else "")
+                        label_chk = f"**{row_r['Nom']}**{detail_r}"
+                        key_chk = f"routine_exo_actif_{prog_choisi}_{idx_r}"
+                        if key_chk not in st.session_state:
+                            st.session_state[key_chk] = True
+                        with cols_chk[idx_r % 2]:
+                            if st.checkbox(label_chk, key=key_chk):
+                                indices_actifs.append(idx_r)
+                    if indices_actifs:
+                        base_active = df_rb.loc[indices_actifs]
+                        st.session_state['seance_brouillon'] = pd.concat([base_active] * nb_tours, ignore_index=True)
+                    else:
+                        st.session_state['seance_brouillon'] = pd.DataFrame()
+                        st.warning("⚠️ Tous les exercices sont désactivés. Cochez au moins un exercice pour lancer la séance.")
+
                 if 'seance_brouillon' in st.session_state and not st.session_state['seance_brouillon'].empty:
                     seance_prete = st.session_state['seance_brouillon']
                     st.success(f"✅ Séance prête : {len(seance_prete)} exercices.")
@@ -957,6 +991,8 @@ Aucun texte avant ou après le JSON."""
                     st.dataframe(seance_prete[cols_seance], hide_index=True, use_container_width=True)
                     if st.button("▶️ DÉMARRER L'ENTRAÎNEMENT", type="primary", use_container_width=True):
                         st.session_state['seance_en_cours'] = seance_prete
+                        if 'routine_base' in st.session_state:
+                            del st.session_state['routine_base']
                         st.session_state['current_exo_index'] = 0
                         del st.session_state['seance_brouillon']
                         st.rerun()
