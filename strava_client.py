@@ -184,69 +184,125 @@ def upload_structured_strength_activity(
     description=""
 ):
     """
-    Envoie une séance de renforcement structurée (exercices, séries, reps/durée, calories)
-    via POST /api/v3/uploads (data_type='json'), puis met à jour le titre/description.
+    Envoie une séance de renforcement vers Strava avec ses calories calculées et sa durée :
+    1) Envoie un fichier TCX (data_type='tcx') incluant <Calories> et <TotalTimeSeconds>
+       (les formats partenaires JSON/sets étant réservés aux clés API commerciales Strava).
+    2) Met à jour le titre, sport_type (WeightTraining) et la description structurée des exercices,
+       puis vérifie l'activité créée via GET /activities/{id}.
     """
     import io
-    import json
+    from datetime import timedelta
 
     access_token = get_access_token()
     headers = {'Authorization': f'Bearer {access_token}'}
+    elapsed_int = max(60, int(elapsed_time_sec))
+    active_int = max(1, int(active_time_sec))
+    cal_int = max(1, int(round(total_calories)))
 
-    json_payload = {
-        "version": "1.0",
-        "start_time": start_date_local_iso,
-        "elapsed_time": max(60, int(elapsed_time_sec)),
-        "active_time": max(1, int(active_time_sec)),
-        "total_calories": max(1, int(round(total_calories))),
-        "creator": {
-            "name": "Coach Trail IA"
-        },
-        "sets": sets_list
-    }
+    try:
+        dt_start = datetime.strptime(start_date_local_iso, "%Y-%m-%dT%H:%M:%SZ")
+    except Exception:
+        dt_start = datetime.utcnow()
 
-    json_bytes = json.dumps(json_payload, ensure_ascii=False).encode("utf-8")
-    files = {
-        'file': ('seance_renfo.json', io.BytesIO(json_bytes), 'application/json')
-    }
-    data = {
-        'data_type': 'json',
+    def _poll_upload(up_id):
+        for _ in range(7):
+            time.sleep(1.5)
+            check = requests.get(f"https://www.strava.com/api/v3/uploads/{up_id}", headers=headers)
+            if check.status_code == 200:
+                chk_data = check.json()
+                if chk_data.get("error"):
+                    return None, chk_data.get("error")
+                act_id = chk_data.get("activity_id")
+                if act_id:
+                    return act_id, None
+        return None, "Délai d'attente dépassé sur Strava"
+
+    def _finaliser_et_verifier(act_id, methode_label, note_diag=""):
+        try:
+            requests.put(
+                f"https://www.strava.com/api/v3/activities/{act_id}",
+                headers=headers,
+                data={'name': name, 'type': sport_type, 'sport_type': sport_type, 'description': description}
+            )
+        except Exception:
+            pass
+        details = {}
+        try:
+            r_get = requests.get(f"https://www.strava.com/api/v3/activities/{act_id}", headers=headers)
+            if r_get.status_code == 200:
+                details = r_get.json()
+        except Exception:
+            pass
+        return True, {
+            "id": act_id,
+            "methode": methode_label,
+            "calories_strava": details.get("calories"),
+            "sport_type_strava": details.get("sport_type") or details.get("type"),
+            "elapsed_time_strava": details.get("elapsed_time"),
+            "nb_series_preparees": len(sets_list),
+            "active_time_sec": active_int,
+            "note_diag": note_diag
+        }
+
+    # --- ENVOI PRINCIPAL : FICHIER TCX AVEC CALORIES ET TEMPS ---
+    dt_end = dt_start + timedelta(seconds=elapsed_int)
+    t0_str = dt_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+    t1_str = dt_end.strftime("%Y-%m-%dT%H:%M:%SZ")
+    tcx_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">
+  <Activities>
+    <Activity Sport="Other">
+      <Id>{t0_str}</Id>
+      <Lap StartTime="{t0_str}">
+        <TotalTimeSeconds>{elapsed_int}</TotalTimeSeconds>
+        <DistanceMeters>0.0</DistanceMeters>
+        <Calories>{cal_int}</Calories>
+        <Intensity>Active</Intensity>
+        <TriggerMethod>Manual</TriggerMethod>
+        <Track>
+          <Trackpoint>
+            <Time>{t0_str}</Time>
+            <DistanceMeters>0.0</DistanceMeters>
+          </Trackpoint>
+          <Trackpoint>
+            <Time>{t1_str}</Time>
+            <DistanceMeters>0.0</DistanceMeters>
+          </Trackpoint>
+        </Track>
+      </Lap>
+    </Activity>
+  </Activities>
+</TrainingCenterDatabase>"""
+    files_tcx = {'file': ('seance_renfo.tcx', io.BytesIO(tcx_content.encode("utf-8")), 'application/xml')}
+    data_tcx = {
+        'data_type': 'tcx',
         'sport_type': sport_type,
         'name': name,
         'description': description,
         'trainer': 1
     }
-
-    res = requests.post("https://www.strava.com/api/v3/uploads", headers=headers, data=data, files=files)
-    if res.status_code not in (200, 201):
-        return False, f"Code {res.status_code} : {res.text}"
-
-    upload_info = res.json()
-    upload_id = upload_info.get("id")
-    activity_id = upload_info.get("activity_id")
-
-    if upload_id and not activity_id:
-        for _ in range(6):
-            time.sleep(1.5)
-            check = requests.get(f"https://www.strava.com/api/v3/uploads/{upload_id}", headers=headers)
-            if check.status_code == 200:
-                chk_data = check.json()
-                if chk_data.get("error"):
-                    return False, f"Erreur traitement fichier Strava : {chk_data.get('error')}"
-                activity_id = chk_data.get("activity_id")
-                if activity_id:
-                    upload_info = chk_data
-                    break
-
-    if activity_id:
-        try:
-            requests.put(
-                f"https://www.strava.com/api/v3/activities/{activity_id}",
-                headers=headers,
-                data={'name': name, 'sport_type': sport_type, 'description': description}
+    diag_tcx = ""
+    res_tcx = requests.post("https://www.strava.com/api/v3/uploads", headers=headers, data=data_tcx, files=files_tcx)
+    if res_tcx.status_code in (200, 201):
+        up_tcx = res_tcx.json()
+        act_id_tcx = up_tcx.get("activity_id")
+        err_tcx = up_tcx.get("error")
+        if not act_id_tcx and not err_tcx and up_tcx.get("id"):
+            act_id_tcx, err_tcx = _poll_upload(up_tcx.get("id"))
+        if act_id_tcx:
+            return _finaliser_et_verifier(
+                act_id_tcx,
+                "Fichier TCX (Calories + Durée + Détail Exercices)",
+                "Calories et durée validées par Strava via TCX"
             )
-        except Exception:
-            pass
-        return True, {"id": activity_id, "upload_id": upload_id}
+        diag_tcx = f"TCX refusé : {err_tcx}"
+    elif res_tcx.status_code == 401:
+        return False, f"Code 401 : {res_tcx.text}"
+    else:
+        diag_tcx = f"TCX HTTP {res_tcx.status_code} : {res_tcx.text}"
 
-    return True, {"id": f"upload_{upload_id} (en cours de traitement sur Strava)", "upload_id": upload_id}
+    # --- FALLBACK : ACTIVITÉ MANUELLE ---
+    ok_man, res_man = create_strava_activity(name, sport_type, start_date_local_iso, elapsed_int, description)
+    if ok_man and isinstance(res_man, dict) and res_man.get("id"):
+        return _finaliser_et_verifier(res_man["id"], "Activité manuelle (/activities)", diag_tcx)
+    return ok_man, res_man

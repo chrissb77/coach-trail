@@ -145,6 +145,38 @@ def est_sans_materiel(val):
     s = str(val).strip().lower()
     return s in {"", "nan", "none", "aucun", "sans", "poids du corps", "non"}
 
+def est_unilateral(val):
+    """Retourne True si la colonne Unilateral indique que l'exercice se fait sur chaque jambe / côté."""
+    if pd.isna(val):
+        return False
+    if isinstance(val, bool):
+        return val
+    s = str(val).strip().lower()
+    return s in {"oui", "yes", "true", "1", "2", "g/d", "g+d", "jambe", "chaque jambe", "unilateral", "unilatéral", "par jambe"}
+
+def deplier_exercices_unilateraux(df_seance):
+    """Déplie chaque exercice marqué Chaque_Jambe / Unilateral en 2 étapes consécutives : Jambe Gauche puis Jambe Droite."""
+    if df_seance is None or df_seance.empty:
+        return pd.DataFrame()
+    lignes_depliees = []
+    for _, row in df_seance.iterrows():
+        is_uni = bool(row.get('Chaque_Jambe', est_unilateral(row.get('Unilateral', ''))))
+        if is_uni:
+            r_gauche = row.copy()
+            r_gauche['Nom_Base'] = str(row.get('Nom', ''))
+            r_gauche['Nom'] = f"{row.get('Nom', '')} — 🦵 Jambe / Côté GAUCHE"
+            lignes_depliees.append(r_gauche)
+
+            r_droite = row.copy()
+            r_droite['Nom_Base'] = str(row.get('Nom', ''))
+            r_droite['Nom'] = f"{row.get('Nom', '')} — 🦵 Jambe / Côté DROIT"
+            lignes_depliees.append(r_droite)
+        else:
+            r_norm = row.copy()
+            r_norm['Nom_Base'] = str(row.get('Nom', ''))
+            lignes_depliees.append(r_norm)
+    return pd.DataFrame(lignes_depliees).reset_index(drop=True)
+
 CATALOGUE_STRAVA_EXERCICES = [
     {"Catégorie": "Cuisses / Squats", "Strava_Exercise_Type": "SQUAT", "Exemples FR": "Squat classique, Air squat"},
     {"Catégorie": "Cuisses / Squats", "Strava_Exercise_Type": "GOBLET_SQUAT", "Exemples FR": "Squat gobelet (avec haltère/kettlebell)"},
@@ -363,7 +395,7 @@ def generer_description_strava_renfo(df_seance, nb_tours=1):
     infos_exos = {}
     kcal_par_exo = {}
     for _, row in df_seance.iterrows():
-        nom = str(row.get('Nom', 'Exercice')).strip()
+        nom = str(row.get('Nom_Base') or row.get('Nom', 'Exercice')).strip()
         kcal_e, _, _, _ = calculer_calories_et_set_exo(row)
         if nom not in compteur_exos:
             compteur_exos[nom] = 0
@@ -376,13 +408,15 @@ def generer_description_strava_renfo(df_seance, nb_tours=1):
     for nom in ordre_exos:
         r = infos_exos[nom]
         nb_series = compteur_exos[nom]
+        is_uni = bool(r.get('Chaque_Jambe', est_unilateral(r.get('Unilateral', ''))))
+        uni_txt = " (G+D)" if is_uni else ""
         qte = r.get('Duree_Defaut', '')
         t_mes = str(r.get('Type_Mesure', 'Temps')).strip().lower()
         unite = "reps" if t_mes in ['reps', 'répétitions', 'repetitions'] else "sec"
         mat = str(r.get('Materiel', '')).strip()
         mat_txt = f" [{mat}]" if not est_sans_materiel(mat) else ""
         serie_txt = f"{nb_series} × {qte} {unite}" if nb_series > 1 else f"{qte} {unite}"
-        lignes.append(f"• {nom} : {serie_txt}{mat_txt} (~{kcal_par_exo[nom]:.1f} kcal)")
+        lignes.append(f"• {nom}{uni_txt} : {serie_txt}{mat_txt} (~{kcal_par_exo[nom]:.1f} kcal)")
 
     lignes.append("\n💬 Ressenti / Notes : ")
     return "\n".join(lignes)
@@ -409,6 +443,11 @@ try:
         df_renfo_loaded['Materiel'] = ""
     if not df_renfo_loaded.empty and 'Strava_Exercise_Type' not in df_renfo_loaded.columns:
         df_renfo_loaded['Strava_Exercise_Type'] = ""
+    for alias_uni in ('Unilatéral', 'Par_Jambe', 'Chaque_Jambe'):
+        if alias_uni in df_renfo_loaded.columns and 'Unilateral' not in df_renfo_loaded.columns:
+            df_renfo_loaded = df_renfo_loaded.rename(columns={alias_uni: 'Unilateral'})
+    if not df_renfo_loaded.empty and 'Unilateral' not in df_renfo_loaded.columns:
+        df_renfo_loaded['Unilateral'] = ""
     if not df_renfo_loaded.empty and 'Calories_Unitaire' not in df_renfo_loaded.columns:
         df_renfo_loaded['Calories_Unitaire'] = ""
     st.session_state['df_renfo'] = df_renfo_loaded
@@ -1031,6 +1070,24 @@ Aucun texte avant ou après le JSON."""
     # ==========================================
     with tab_renfo:
         st.header("💪 Séances de Renforcement")
+
+        if st.session_state.get('dernier_bilan_upload_strava'):
+            bilan_up = st.session_state['dernier_bilan_upload_strava']
+            act_id_up = bilan_up.get('id', '')
+            url_act_strava = f"https://www.strava.com/activities/{act_id_up}"
+            with st.expander(f"✅ Dernière séance publiée sur Strava (ID : {act_id_up}) — Cliquez pour voir le rapport de vérification", expanded=True):
+                st.markdown(
+                    f"- 🔗 **Lien direct vers la fiche détaillée de l'activité :** [**Ouvrir sur Strava ({url_act_strava})**]({url_act_strava})  \n"
+                    f"  *(Note : sur le « Tableau de bord » Strava, seule la durée s'affiche sur la vignette. Cliquez sur le titre de l'activité ou sur le lien ci-dessus, ou ouvrez l'application mobile Strava, pour voir les calories et les détails)*.\n"
+                    f"- 📡 **Méthode d'import retenue par Strava :** `{bilan_up.get('methode', 'Inconnue')}`\n"
+                    f"- 🔥 **Calories confirmées par l'API Strava (`GET /activities/{act_id_up}`) :** `{bilan_up.get('calories_strava', 'Non retourné')}` kcal\n"
+                    f"- 🏋️ **Type de sport confirmé :** `{bilan_up.get('sport_type_strava', 'WeightTraining')}`"
+                )
+                if bilan_up.get('note_diag'):
+                    st.caption(f"Diagnostic technique Strava : {bilan_up.get('note_diag')}")
+                if st.button("✖️ Fermer ce rapport", key="btn_close_bilan_strava"):
+                    del st.session_state['dernier_bilan_upload_strava']
+                    st.rerun()
         
         if 'df_renfo' in st.session_state and not st.session_state['df_renfo'].empty:
             df_renfo = st.session_state['df_renfo']
@@ -1106,21 +1163,14 @@ Aucun texte avant ou après le JSON."""
                                 sets_list=sets_strava,
                                 description=desc_strava
                             )
-                            if not ok and "401" not in str(resultat):
-                                ok, resultat = strava_client.create_strava_activity(
-                                    name=titre_strava,
-                                    sport_type=sport_strava,
-                                    start_date_local_iso=iso_start,
-                                    elapsed_time_sec=elapsed_sec,
-                                    description=desc_strava
-                                )
                             if ok:
-                                act_id_new = resultat.get('id', '')
+                                act_id_new = resultat.get('id', '') if isinstance(resultat, dict) else resultat
+                                if isinstance(resultat, dict):
+                                    st.session_state['dernier_bilan_upload_strava'] = resultat
                                 st.success(f"✅ Séance publiée sur Strava avec succès ! (ID : {act_id_new})")
                                 if 'strava_df' in st.session_state:
                                     del st.session_state['strava_df']
                                 del st.session_state['seance_terminee']
-                                # Transition directe vers l'écran de publication Strava
                                 st.rerun()
                             else:
                                 st.error(f"❌ Impossible de publier sur Strava : {resultat}")
@@ -1433,15 +1483,23 @@ Aucun texte avant ou après le JSON."""
                     df_brouillon = st.session_state['seance_brouillon'].copy()
                     if 'Actif' not in df_brouillon.columns:
                         df_brouillon.insert(0, 'Actif', True)
+                    if 'Chaque_Jambe' not in df_brouillon.columns:
+                        val_uni_init = df_brouillon['Unilateral'].apply(est_unilateral) if 'Unilateral' in df_brouillon.columns else False
+                        df_brouillon.insert(1, 'Chaque_Jambe', val_uni_init)
                     conteneur_resume = st.container()
                     cols_infos = [c for c in ['Nom', 'Zone', 'Materiel', 'Duree_Defaut', 'Description'] if c in df_brouillon.columns]
                     df_edite = st.data_editor(
-                        df_brouillon[['Actif'] + cols_infos],
+                        df_brouillon[['Actif', 'Chaque_Jambe'] + cols_infos],
                         column_config={
                             "Actif": st.column_config.CheckboxColumn(
                                 "✅ Actif",
                                 help="Décochez pour désactiver cet exercice de la séance",
                                 default=True
+                            ),
+                            "Chaque_Jambe": st.column_config.CheckboxColumn(
+                                "🦵 Chaque jambe (G+D)",
+                                help="Si coché, l'exercice sera doublé (Jambe/Côté Gauche puis Jambe/Côté Droit) pendant la séance",
+                                default=False
                             )
                         },
                         disabled=cols_infos,
@@ -1450,11 +1508,15 @@ Aucun texte avant ou après le JSON."""
                         key=f"editeur_seance_{st.session_state.get('editeur_version', 0)}"
                     )
                     st.session_state['seance_brouillon']['Actif'] = df_edite['Actif'].values
-                    seance_prete = st.session_state['seance_brouillon'][st.session_state['seance_brouillon']['Actif'] == True].drop(columns=['Actif']).reset_index(drop=True)
+                    st.session_state['seance_brouillon']['Chaque_Jambe'] = df_edite['Chaque_Jambe'].values
+                    seance_active_brute = st.session_state['seance_brouillon'][st.session_state['seance_brouillon']['Actif'] == True].drop(columns=['Actif']).reset_index(drop=True)
+                    seance_prete = deplier_exercices_unilateraux(seance_active_brute)
 
                     with conteneur_resume:
                         if not seance_prete.empty:
-                            st.success(f"✅ Séance prête : {len(seance_prete)} exercice(s) actif(s) (sur {len(df_brouillon)}). Décochez dans le tableau pour désactiver un exercice.")
+                            nb_uni = int(seance_active_brute['Chaque_Jambe'].sum()) if 'Chaque_Jambe' in seance_active_brute.columns else 0
+                            precision_uni = f" dont {nb_uni} en G+D → **{len(seance_prete)} séquences au total**" if nb_uni > 0 else ""
+                            st.success(f"✅ Séance prête : {len(seance_active_brute)} exercice(s) actif(s){precision_uni}. Cochez '🦵 Chaque jambe (G+D)' pour doubler un exercice (Gauche puis Droite).")
                             materiels_seance = extraire_tags_materiel(seance_prete['Materiel']) if 'Materiel' in seance_prete.columns else []
                             if materiels_seance:
                                 st.warning(f"🧰 **Matériel nécessaire pour cette séance :** {', '.join(materiels_seance)}")
@@ -1535,7 +1597,7 @@ Aucun texte avant ou après le JSON."""
                     lambda r: str(r.get('Strava_Exercise_Type', '')).strip() or f"{obtenir_strava_exercise_type(r)} (auto)",
                     axis=1
                 )
-                colonnes_ordre = ['Nom', 'Zone', 'Materiel', 'Statut Média', 'Type_Mesure', 'Duree_Defaut', 'Calories_Unitaire', 'Strava_Type_Effectif', 'Description', 'Media_URL']
+                colonnes_ordre = ['Nom', 'Zone', 'Materiel', 'Unilateral', 'Statut Média', 'Type_Mesure', 'Duree_Defaut', 'Calories_Unitaire', 'Strava_Type_Effectif', 'Description', 'Media_URL']
                 colonnes_finales = [c for c in colonnes_ordre if c in df_affiche.columns] + [c for c in df_affiche.columns if c not in colonnes_ordre and c != 'Strava_Exercise_Type']
 
                 st.dataframe(df_affiche[colonnes_finales], use_container_width=True, hide_index=True)
