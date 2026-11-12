@@ -140,3 +140,35 @@ def get_advanced_kpis(act_id):
         f"Z3(135-153): {z3:.0f}%, Z4(153-166): {z4:.0f}%, Z5(>166): {z5:.0f}%. "
         f"Dérive FC: {'+' if derive > 0 else ''}{derive:.1f} bpm."
     )
+
+def create_strava_activity(name, sport_type, start_date_local_iso, elapsed_time_sec, description=""):
+    """Crée et publie une activité manuelle sur Strava (nécessite le scope activity:write)."""
+    access_token = get_access_token()
+    headers = {'Authorization': f'Bearer {access_token}'}
+    payload = {
+        'name': name,
+        'type': sport_type,
+        'sport_type': sport_type,
+        'start_date_local': start_date_local_iso,
+        'elapsed_time': max(60, int(elapsed_time_sec)),
+        'description': description,
+        'trainer': 1
+    }
+    res = requests.post("https://www.strava.com/api/v3/activities", headers=headers, data=payload)
+    if res.status_code in (200, 201):
+        return True, res.json()
+    return False, f"Code {res.status_code} : {res.text}"
+
+def exchange_code_for_tokens(auth_code):
+    """Échange un code d'autorisation OAuth Strava contre un nouveau refresh_token."""
+    url = "https://www.strava.com/oauth/token"
+    payload = {
+        'client_id': CLIENT_ID,
+        'client_secret': CLIENT_SECRET,
+        'code': auth_code.strip(),
+        'grant_type': 'authorization_code'
+    }
+    res = requests.post(url, data=payload)
+    if res.status_code == 200:
+        return True, res.json()
+    return False, f"Code {res.status_code} : {res.text}"

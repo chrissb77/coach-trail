@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
 from google import genai
+import importlib
 import strava_client
+importlib.reload(strava_client)
 import sheets_client
 import json
 import time
@@ -143,6 +145,51 @@ def est_sans_materiel(val):
     s = str(val).strip().lower()
     return s in {"", "nan", "none", "aucun", "sans", "poids du corps", "non"}
 
+def generer_description_strava_renfo(df_seance, nb_tours=1):
+    """Génère le texte récapitulatif détaillé d'une séance de renforcement pour Strava."""
+    if df_seance is None or df_seance.empty:
+        return ""
+    zones_s = sorted({
+        z.strip()
+        for val in df_seance.get('Zone', pd.Series(dtype=str)).dropna().astype(str)
+        for z in val.split(',') if z.strip()
+    })
+    mats_s = extraire_tags_materiel(df_seance['Materiel']) if 'Materiel' in df_seance.columns else []
+
+    lignes = [f"💪 Séance de renforcement ({len(df_seance)} exercices réalisés | {nb_tours} tour(s))"]
+    if zones_s:
+        lignes.append(f"🎯 Zones ciblées : {', '.join(zones_s)}")
+    if mats_s:
+        lignes.append(f"🧰 Matériel : {', '.join(mats_s)}")
+    else:
+        lignes.append("🧰 Matériel : Poids du corps")
+    lignes.append("\n📋 Détail des exercices :")
+
+    compteur_exos = {}
+    ordre_exos = []
+    infos_exos = {}
+    for _, row in df_seance.iterrows():
+        nom = str(row.get('Nom', 'Exercice')).strip()
+        if nom not in compteur_exos:
+            compteur_exos[nom] = 0
+            ordre_exos.append(nom)
+            infos_exos[nom] = row
+        compteur_exos[nom] += 1
+
+    for nom in ordre_exos:
+        r = infos_exos[nom]
+        nb_series = compteur_exos[nom]
+        qte = r.get('Duree_Defaut', '')
+        t_mes = str(r.get('Type_Mesure', 'Temps')).strip().lower()
+        unite = "reps" if t_mes in ['reps', 'répétitions', 'repetitions'] else "sec"
+        mat = str(r.get('Materiel', '')).strip()
+        mat_txt = f" [{mat}]" if not est_sans_materiel(mat) else ""
+        serie_txt = f"{nb_series} × {qte} {unite}" if nb_series > 1 else f"{qte} {unite}"
+        lignes.append(f"• {nom} : {serie_txt}{mat_txt}")
+
+    lignes.append("\n💬 Ressenti / Notes : ")
+    return "\n".join(lignes)
+
 # --- INITIALISATION DE L'IA ---
 try:
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
@@ -170,6 +217,10 @@ try:
 except Exception:
     st.session_state['df_renfo'] = pd.DataFrame()
     st.session_state['df_progs'] = pd.DataFrame()
+
+strava_client.CLIENT_ID = st.secrets["STRAVA_CLIENT_ID"]
+strava_client.CLIENT_SECRET = st.secrets["STRAVA_CLIENT_SECRET"]
+strava_client.REFRESH_TOKEN = st.session_state.get("override_strava_refresh_token", st.secrets["STRAVA_REFRESH_TOKEN"])
 
 if 'derniere_analyse' not in st.session_state:
     try:
@@ -673,7 +724,7 @@ Aucun texte avant ou après le JSON."""
                             df_plan = pd.DataFrame(ws_plan.get_all_records())               
                             st.session_state['plan_df'] = df_plan                           
                             st.session_state['plan_text'] = df_plan.to_markdown()
-                            time.sleep(2)
+                            # Transition directe vers l'écran de publication Strava
                             st.rerun()
                         else:
                             st.error("L'IA n'a renvoyé aucune semaine valide.")
@@ -693,7 +744,106 @@ Aucun texte avant ou après le JSON."""
         if 'df_renfo' in st.session_state and not st.session_state['df_renfo'].empty:
             df_renfo = st.session_state['df_renfo']
 
-            if 'seance_en_cours' in st.session_state:
+            if 'seance_terminee' in st.session_state:
+                if st.session_state.pop('afficher_ballons', False):
+                    st.balloons()
+
+                st.success("🎉 Bravo ! Votre séance de renforcement est terminée !")
+                st.subheader("📤 Publier la séance sur Strava")
+
+                t_start = st.session_state.get('seance_start_time', datetime.now())
+                titre_strava = st.text_input(
+                    "🏷️ Titre de l'activité :",
+                    value=st.session_state.get('seance_nom_defaut', "💪 Renforcement Trail")
+                )
+                col_sp, col_dur = st.columns(2)
+                with col_sp:
+                    labels_sports = {
+                        "WeightTraining": "🏋️ WeightTraining (Renforcement musculaire)",
+                        "Workout": "💪 Workout (Entraînement)",
+                        "Crossfit": "🔥 Crossfit",
+                        "Yoga": "🧘 Yoga / Mobilité"
+                    }
+                    sport_strava = st.selectbox(
+                        "Type d'activité Strava :",
+                        list(labels_sports.keys()),
+                        format_func=lambda k: labels_sports[k]
+                    )
+                with col_dur:
+                    duree_strava_min = st.number_input(
+                        "⏱️ Durée de la séance (minutes) :",
+                        min_value=1,
+                        max_value=300,
+                        value=int(st.session_state.get('strava_duree_min', 15))
+                    )
+
+                desc_strava = st.text_area(
+                    "📝 Détail de la séance (affiché dans la description Strava) :",
+                    value=st.session_state.get('strava_desc_renfo', ''),
+                    height=220
+                )
+
+                col_pub, col_quit = st.columns([2, 1])
+                with col_pub:
+                    if st.button("🚀 Envoyer la séance sur Strava", type="primary", use_container_width=True):
+                        with st.spinner("Publication de votre séance sur Strava..."):
+                            iso_start = t_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+                            ok, resultat = strava_client.create_strava_activity(
+                                name=titre_strava,
+                                sport_type=sport_strava,
+                                start_date_local_iso=iso_start,
+                                elapsed_time_sec=int(duree_strava_min) * 60,
+                                description=desc_strava
+                            )
+                            if ok:
+                                act_id_new = resultat.get('id', '')
+                                st.success(f"✅ Séance publiée sur Strava avec succès ! (ID : {act_id_new})")
+                                if 'strava_df' in st.session_state:
+                                    del st.session_state['strava_df']
+                                del st.session_state['seance_terminee']
+                                # Transition directe vers l'écran de publication Strava
+                                st.rerun()
+                            else:
+                                st.error(f"❌ Impossible de publier sur Strava : {resultat}")
+                                st.session_state['strava_auth_error'] = True
+                with col_quit:
+                    if st.button("🏠 Quitter sans publier", type="secondary", use_container_width=True):
+                        del st.session_state['seance_terminee']
+                        st.session_state.pop('strava_auth_error', None)
+                        st.rerun()
+
+                with st.expander("🔑 Guide & Assistant : Activer la permission d'écriture Strava (activity:write)", expanded=st.session_state.get('strava_auth_error', False)):
+                    client_id_actuel = st.secrets.get("STRAVA_CLIENT_ID", "")
+                    auth_url = (
+                        f"https://www.strava.com/oauth/authorize?client_id={client_id_actuel}"
+                        f"&response_type=code&redirect_uri=http://localhost/exchange_token"
+                        f"&approval_prompt=force&scope=read,activity:read_all,activity:write"
+                    )
+                    st.markdown(
+                        "Si vous obtenez une erreur **401 Authorization Error**, c'est que votre `STRAVA_REFRESH_TOKEN` "
+                        "actuel n'a que le droit de lecture (`activity:read_all`). Voici comment activer l'écriture en 3 étapes :\n"
+                        f"1. **[Cliquez ici pour autoriser l'application sur Strava (avec activity:write)]({auth_url})**.\n"
+                        "2. Cochez bien toutes les cases puis cliquez sur **Autoriser**. Vous allez arriver sur une page inaccessible (`localhost/exchange_token?...`) : **c'est normal !**\n"
+                        "3. Dans la barre d'adresse de votre navigateur, copiez la valeur située entre `code=` et `&scope=` (ou collez l'URL complète ci-dessous) :"
+                    )
+                    code_saisi = st.text_input("Collez ici le `code` (ou l'URL complète de redirection `http://localhost/...`) :")
+                    if st.button("🔄 Générer mon nouveau STRAVA_REFRESH_TOKEN"):
+                        code_propre = code_saisi.strip()
+                        if "code=" in code_propre:
+                            code_propre = code_propre.split("code=")[1].split("&")[0]
+                        if code_propre:
+                            ok_tok, res_tok = strava_client.exchange_code_for_tokens(code_propre)
+                            if ok_tok:
+                                new_rt = res_tok.get("refresh_token", "")
+                                st.session_state["override_strava_refresh_token"] = new_rt
+                                strava_client.REFRESH_TOKEN = new_rt
+                                st.success("✅ Nouveau token actif immédiatement pour cette session ! Vous pouvez cliquer sur '🚀 Envoyer la séance sur Strava' ci-dessus.")
+                                st.info("📌 **Pour le sauvegarder définitivement**, remplacez `STRAVA_REFRESH_TOKEN` dans vos Secrets Streamlit (`.streamlit/secrets.toml` ou paramètres Streamlit Cloud) par :")
+                                st.code(f'STRAVA_REFRESH_TOKEN = "{new_rt}"', language="toml")
+                            else:
+                                st.error(f"Erreur lors de l'échange du code : {res_tok}")
+
+            elif 'seance_en_cours' in st.session_state:
                 seance = st.session_state['seance_en_cours']
                 
                 if 'current_exo_index' not in st.session_state:
@@ -826,22 +976,28 @@ Aucun texte avant ou après le JSON."""
                             st.rerun()
                     else:
                         if st.button("🎉 Terminer la séance", type="primary", use_container_width=True):
-                            st.balloons()
+                            t_start = st.session_state.get('seance_start_time', datetime.now())
+                            duree_reelle = max(1, round((datetime.now() - t_start).total_seconds() / 60))
+                            st.session_state['seance_terminee'] = seance
+                            st.session_state['strava_duree_min'] = duree_reelle
+                            st.session_state['strava_desc_renfo'] = generer_description_strava_renfo(
+                                seance,
+                                st.session_state.get('seance_nb_tours', 1)
+                            )
+                            st.session_state['afficher_ballons'] = True
                             del st.session_state['seance_en_cours']
                             del st.session_state['current_exo_index']
-                            time.sleep(2)
+                            # Transition directe vers l'écran de publication Strava
                             st.rerun()
 
             else:
                 def reset_brouillon():
+                    st.session_state['editeur_version'] = st.session_state.get('editeur_version', 0) + 1
                     if 'seance_brouillon' in st.session_state:
                         del st.session_state['seance_brouillon']
-                    if 'routine_base' in st.session_state:
-                        del st.session_state['routine_base']
 
                 def reset_tours():
-                    if 'seance_brouillon' in st.session_state and 'routine_base' not in st.session_state:
-                        del st.session_state['seance_brouillon']
+                    st.session_state['editeur_version'] = st.session_state.get('editeur_version', 0) + 1
                     if 'seance_brouillon' in st.session_state:
                         del st.session_state['seance_brouillon']
 
@@ -951,46 +1107,51 @@ Aucun texte avant ou après le JSON."""
                                     exos_list.append(match.iloc[0])
                             if exos_list:
                                 base = pd.DataFrame(exos_list).reset_index(drop=True)
-                                st.session_state['routine_base'] = base
-                                for idx_r in range(len(base)):
-                                    st.session_state[f"routine_exo_actif_{prog_choisi}_{idx_r}"] = True
+                                st.session_state['editeur_version'] = st.session_state.get('editeur_version', 0) + 1
                                 st.session_state['seance_brouillon'] = pd.concat([base] * nb_tours, ignore_index=True)
                 
-                if mode == "Programme Prédéfini" and 'routine_base' in st.session_state and not st.session_state['routine_base'].empty:
-                    df_rb = st.session_state['routine_base']
-                    st.markdown("##### 🎛️ Exercices de la routine (décochez pour désactiver aujourd'hui) :")
-                    cols_chk = st.columns(2)
-                    indices_actifs = []
-                    for idx_r, row_r in df_rb.iterrows():
-                        zone_r = str(row_r.get('Zone', '')).strip()
-                        mat_r = str(row_r.get('Materiel', '')).strip()
-                        detail_r = f" ({zone_r}" + (f" • 🧰 {mat_r})" if not est_sans_materiel(mat_r) else ")") if zone_r else (f" (🧰 {mat_r})" if not est_sans_materiel(mat_r) else "")
-                        label_chk = f"**{row_r['Nom']}**{detail_r}"
-                        key_chk = f"routine_exo_actif_{prog_choisi}_{idx_r}"
-                        if key_chk not in st.session_state:
-                            st.session_state[key_chk] = True
-                        with cols_chk[idx_r % 2]:
-                            if st.checkbox(label_chk, key=key_chk):
-                                indices_actifs.append(idx_r)
-                    if indices_actifs:
-                        base_active = df_rb.loc[indices_actifs]
-                        st.session_state['seance_brouillon'] = pd.concat([base_active] * nb_tours, ignore_index=True)
-                    else:
-                        st.session_state['seance_brouillon'] = pd.DataFrame()
-                        st.warning("⚠️ Tous les exercices sont désactivés. Cochez au moins un exercice pour lancer la séance.")
-
                 if 'seance_brouillon' in st.session_state and not st.session_state['seance_brouillon'].empty:
-                    seance_prete = st.session_state['seance_brouillon']
-                    st.success(f"✅ Séance prête : {len(seance_prete)} exercices.")
-                    materiels_seance = extraire_tags_materiel(seance_prete['Materiel']) if 'Materiel' in seance_prete.columns else []
-                    if materiels_seance:
-                        st.warning(f"🧰 **Matériel nécessaire pour cette séance :** {', '.join(materiels_seance)}")
-                    else:
-                        st.info("🧰 **Matériel nécessaire pour cette séance :** Aucun (Poids du corps uniquement)")
-                    cols_seance = [c for c in ['Nom', 'Zone', 'Materiel', 'Duree_Defaut', 'Description'] if c in seance_prete.columns]
-                    st.dataframe(seance_prete[cols_seance], hide_index=True, use_container_width=True)
-                    if st.button("▶️ DÉMARRER L'ENTRAÎNEMENT", type="primary", use_container_width=True):
+                    df_brouillon = st.session_state['seance_brouillon'].copy()
+                    if 'Actif' not in df_brouillon.columns:
+                        df_brouillon.insert(0, 'Actif', True)
+                    conteneur_resume = st.container()
+                    cols_infos = [c for c in ['Nom', 'Zone', 'Materiel', 'Duree_Defaut', 'Description'] if c in df_brouillon.columns]
+                    df_edite = st.data_editor(
+                        df_brouillon[['Actif'] + cols_infos],
+                        column_config={
+                            "Actif": st.column_config.CheckboxColumn(
+                                "✅ Actif",
+                                help="Décochez pour désactiver cet exercice de la séance",
+                                default=True
+                            )
+                        },
+                        disabled=cols_infos,
+                        hide_index=True,
+                        use_container_width=True,
+                        key=f"editeur_seance_{st.session_state.get('editeur_version', 0)}"
+                    )
+                    st.session_state['seance_brouillon']['Actif'] = df_edite['Actif'].values
+                    seance_prete = st.session_state['seance_brouillon'][st.session_state['seance_brouillon']['Actif'] == True].drop(columns=['Actif']).reset_index(drop=True)
+
+                    with conteneur_resume:
+                        if not seance_prete.empty:
+                            st.success(f"✅ Séance prête : {len(seance_prete)} exercice(s) actif(s) (sur {len(df_brouillon)}). Décochez dans le tableau pour désactiver un exercice.")
+                            materiels_seance = extraire_tags_materiel(seance_prete['Materiel']) if 'Materiel' in seance_prete.columns else []
+                            if materiels_seance:
+                                st.warning(f"🧰 **Matériel nécessaire pour cette séance :** {', '.join(materiels_seance)}")
+                            else:
+                                st.info("🧰 **Matériel nécessaire pour cette séance :** Aucun (Poids du corps uniquement)")
+                        else:
+                            st.warning("⚠️ Aucun exercice actif sélectionné. Cochez au moins un exercice dans le tableau pour lancer la séance.")
+                    if st.button("▶️ DÉMARRER L'ENTRAÎNEMENT", type="primary", use_container_width=True, disabled=seance_prete.empty):
                         st.session_state['seance_en_cours'] = seance_prete
+                        st.session_state['seance_start_time'] = datetime.now()
+                        st.session_state['seance_nb_tours'] = nb_tours
+                        st.session_state['seance_nom_defaut'] = (
+                            f"💪 Renforcement Trail - {prog_choisi}"
+                            if mode == "Programme Prédéfini" and 'prog_choisi' in locals()
+                            else f"💪 Renforcement Trail ({mode})"
+                        )
                         if 'routine_base' in st.session_state:
                             del st.session_state['routine_base']
                         st.session_state['current_exo_index'] = 0
@@ -1000,7 +1161,7 @@ Aucun texte avant ou après le JSON."""
             st.info("Pour activer ce module, créez l'onglet 'Bibliotheque_Renfo'.")
 
         # --- ESPACE BIBLIOTHÈQUE (Masqué par défaut et masqué pendant une séance) ---
-        if 'df_renfo' in st.session_state and not st.session_state['df_renfo'].empty and 'seance_en_cours' not in st.session_state:
+        if 'df_renfo' in st.session_state and not st.session_state['df_renfo'].empty and 'seance_en_cours' not in st.session_state and 'seance_terminee' not in st.session_state:
             df_renfo_biblio = st.session_state['df_renfo'].copy()
             st.markdown("---")
             with st.expander(f"📚 Bibliothèque complète des exercices ({len(df_renfo_biblio)} exercices)", expanded=False):
