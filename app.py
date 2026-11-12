@@ -145,10 +145,200 @@ def est_sans_materiel(val):
     s = str(val).strip().lower()
     return s in {"", "nan", "none", "aucun", "sans", "poids du corps", "non"}
 
+CATALOGUE_STRAVA_EXERCICES = [
+    {"Catégorie": "Cuisses / Squats", "Strava_Exercise_Type": "SQUAT", "Exemples FR": "Squat classique, Air squat"},
+    {"Catégorie": "Cuisses / Squats", "Strava_Exercise_Type": "GOBLET_SQUAT", "Exemples FR": "Squat gobelet (avec haltère/kettlebell)"},
+    {"Catégorie": "Cuisses / Squats", "Strava_Exercise_Type": "BULGARIAN_SPLIT_SQUAT", "Exemples FR": "Squat bulgare"},
+    {"Catégorie": "Cuisses / Squats", "Strava_Exercise_Type": "PISTOL_SQUAT", "Exemples FR": "Squat une jambe (Pistol)"},
+    {"Catégorie": "Cuisses / Squats", "Strava_Exercise_Type": "WALL_SIT", "Exemples FR": "Chaise contre le mur"},
+    {"Catégorie": "Cuisses / Squats", "Strava_Exercise_Type": "JUMP_SQUAT", "Exemples FR": "Squat sauté (pliométrie)"},
+    {"Catégorie": "Fentes / Step", "Strava_Exercise_Type": "LUNGE", "Exemples FR": "Fentes avant"},
+    {"Catégorie": "Fentes / Step", "Strava_Exercise_Type": "REVERSE_LUNGE", "Exemples FR": "Fentes arrière"},
+    {"Catégorie": "Fentes / Step", "Strava_Exercise_Type": "SIDE_LUNGE", "Exemples FR": "Fentes latérales (Cossack)"},
+    {"Catégorie": "Fentes / Step", "Strava_Exercise_Type": "WALKING_LUNGE", "Exemples FR": "Fentes marchées"},
+    {"Catégorie": "Fentes / Step", "Strava_Exercise_Type": "DUMBBELL_LUNGE", "Exemples FR": "Fentes avec haltères"},
+    {"Catégorie": "Fentes / Step", "Strava_Exercise_Type": "STEP_UP", "Exemples FR": "Montée sur banc / boîte (Step-up)"},
+    {"Catégorie": "Fentes / Step", "Strava_Exercise_Type": "LATERAL_STEP_UP", "Exemples FR": "Montée latérale / descente excentrique"},
+    {"Catégorie": "Mollets / Chevilles / Pieds", "Strava_Exercise_Type": "CALF_RAISE", "Exemples FR": "Extensions mollets deux jambes"},
+    {"Catégorie": "Mollets / Chevilles / Pieds", "Strava_Exercise_Type": "SINGLE_LEG_CALF_RAISE", "Exemples FR": "Mollet une jambe (excentrique / Slant board)"},
+    {"Catégorie": "Mollets / Chevilles / Pieds", "Strava_Exercise_Type": "SEATED_CALF_RAISE", "Exemples FR": "Mollets assis (soléaire)"},
+    {"Catégorie": "Mollets / Chevilles / Pieds", "Strava_Exercise_Type": "WEIGHTED_CALF_RAISE", "Exemples FR": "Mollets lestés avec haltère"},
+    {"Catégorie": "Fessiers / Ischios", "Strava_Exercise_Type": "GLUTE_BRIDGE", "Exemples FR": "Pont fessier deux jambes"},
+    {"Catégorie": "Fessiers / Ischios", "Strava_Exercise_Type": "SINGLE_LEG_GLUTE_BRIDGE", "Exemples FR": "Pont fessier une jambe"},
+    {"Catégorie": "Fessiers / Ischios", "Strava_Exercise_Type": "HIP_THRUST", "Exemples FR": "Hip thrust (relevé de bassin sur banc)"},
+    {"Catégorie": "Fessiers / Ischios", "Strava_Exercise_Type": "SINGLE_LEG_DEADLIFT", "Exemples FR": "Soulevé de terre roumain 1 jambe"},
+    {"Catégorie": "Fessiers / Ischios", "Strava_Exercise_Type": "ROMANIAN_DEADLIFT", "Exemples FR": "Soulevé de terre jambes tendues"},
+    {"Catégorie": "Fessiers / Ischios", "Strava_Exercise_Type": "CLAMSHELL", "Exemples FR": "Palourde (ouverture hanche avec élastique)"},
+    {"Catégorie": "Fessiers / Ischios", "Strava_Exercise_Type": "MONSTER_WALK", "Exemples FR": "Marche en crabe / Monster walk (élastique)"},
+    {"Catégorie": "Fessiers / Ischios", "Strava_Exercise_Type": "HAMSTRING_CURL", "Exemples FR": "Leg curl / Ischios sur ballon (Swiss ball)"},
+    {"Catégorie": "Gainage / Core", "Strava_Exercise_Type": "PLANK_GENERIC", "Exemples FR": "Planche ventrale / Gainage frontal"},
+    {"Catégorie": "Gainage / Core", "Strava_Exercise_Type": "SIDE_PLANK", "Exemples FR": "Planche latérale / Gainage costal"},
+    {"Catégorie": "Gainage / Core", "Strava_Exercise_Type": "DEAD_BUG", "Exemples FR": "Dead bug"},
+    {"Catégorie": "Gainage / Core", "Strava_Exercise_Type": "BIRD_DOG", "Exemples FR": "Bird dog (quadrupédie)"},
+    {"Catégorie": "Gainage / Core", "Strava_Exercise_Type": "MOUNTAIN_CLIMBER", "Exemples FR": "Mountain climbers"},
+    {"Catégorie": "Gainage / Core", "Strava_Exercise_Type": "SUPERMAN_FROM_FLOOR", "Exemples FR": "Superman / Lombaires au sol"},
+    {"Catégorie": "Gainage / Core", "Strava_Exercise_Type": "RUSSIAN_TWIST", "Exemples FR": "Russian twist (obliques)"},
+    {"Catégorie": "Gainage / Core", "Strava_Exercise_Type": "HOLLOW_ROCK", "Exemples FR": "Hollow body / Banane"},
+    {"Catégorie": "Gainage / Core", "Strava_Exercise_Type": "CRUNCH", "Exemples FR": "Crunch abdominal"},
+    {"Catégorie": "Haut du corps", "Strava_Exercise_Type": "PUSH_UP", "Exemples FR": "Pompes"},
+    {"Catégorie": "Haut du corps", "Strava_Exercise_Type": "PULL_UP", "Exemples FR": "Tractions"},
+    {"Catégorie": "Haut du corps", "Strava_Exercise_Type": "DUMBBELL_ROW", "Exemples FR": "Rowing haltère (dos)"},
+    {"Catégorie": "Haut du corps", "Strava_Exercise_Type": "SHOULDER_PRESS", "Exemples FR": "Développé épaules"},
+    {"Catégorie": "Haut du corps", "Strava_Exercise_Type": "TRICEP_DIP", "Exemples FR": "Dips triceps"}
+]
+
+def obtenir_strava_exercise_type(row):
+    """Retourne le Strava_Exercise_Type défini dans le Sheet, ou le déduit automatiquement."""
+    val_sheet = str(row.get('Strava_Exercise_Type', '')).strip()
+    if val_sheet and val_sheet.lower() not in {"nan", "none", ""}:
+        return val_sheet.upper().replace(" ", "_")
+
+    texte = f"{row.get('Nom', '')} {row.get('Zone', '')} {row.get('Description', '')}".lower()
+    if "bulgare" in texte or "bulgarian" in texte:
+        return "BULGARIAN_SPLIT_SQUAT"
+    if "pistol" in texte:
+        return "PISTOL_SQUAT"
+    if "chaise" in texte or "wall sit" in texte:
+        return "WALL_SIT"
+    if "goblet" in texte:
+        return "GOBLET_SQUAT"
+    if "squat" in texte and ("saut" in texte or "jump" in texte):
+        return "JUMP_SQUAT"
+    if "squat" in texte:
+        return "SQUAT"
+    if "fente" in texte or "lunge" in texte:
+        if "lat" in texte or "cossack" in texte:
+            return "SIDE_LUNGE"
+        if "arr" in texte or "reverse" in texte:
+            return "REVERSE_LUNGE"
+        if "march" in texte or "walk" in texte:
+            return "WALKING_LUNGE"
+        return "LUNGE"
+    if "step" in texte or "marche" in texte or "boîte" in texte or "box" in texte:
+        if "lat" in texte:
+            return "LATERAL_STEP_UP"
+        if "mollet" not in texte:
+            return "STEP_UP"
+    if "mollet" in texte or "achille" in texte or "soléaire" in texte or "soleaire" in texte or "calf" in texte:
+        if "assis" in texte or "soléaire" in texte or "soleaire" in texte:
+            return "SEATED_CALF_RAISE"
+        if "1" in texte or "une jambe" in texte or "unilat" in texte or "excentrique" in texte:
+            return "SINGLE_LEG_CALF_RAISE"
+        return "CALF_RAISE"
+    if "pont" in texte or "bridge" in texte:
+        if "1" in texte or "une jambe" in texte or "unilat" in texte:
+            return "SINGLE_LEG_GLUTE_BRIDGE"
+        return "GLUTE_BRIDGE"
+    if "hip thrust" in texte:
+        return "HIP_THRUST"
+    if "soulevé" in texte or "souleve" in texte or "deadlift" in texte:
+        if "1" in texte or "une jambe" in texte or "unilat" in texte:
+            return "SINGLE_LEG_DEADLIFT"
+        return "ROMANIAN_DEADLIFT"
+    if "palourde" in texte or "clamshell" in texte:
+        return "CLAMSHELL"
+    if "crabe" in texte or "monster" in texte:
+        return "MONSTER_WALK"
+    if "ischio" in texte and ("ballon" in texte or "swiss" in texte or "curl" in texte):
+        return "HAMSTRING_CURL"
+    if "planche" in texte or "gainage" in texte or "plank" in texte:
+        if "lat" in texte or "costal" in texte or "côté" in texte or "cote" in texte:
+            return "SIDE_PLANK"
+        return "PLANK_GENERIC"
+    if "dead bug" in texte or "deadbug" in texte:
+        return "DEAD_BUG"
+    if "bird dog" in texte or "birddog" in texte or "quadrup" in texte:
+        return "BIRD_DOG"
+    if "mountain" in texte:
+        return "MOUNTAIN_CLIMBER"
+    if "superman" in texte or "lombaire" in texte:
+        return "SUPERMAN_FROM_FLOOR"
+    if "russian" in texte or "oblique" in texte:
+        return "RUSSIAN_TWIST"
+    if "hollow" in texte or "banane" in texte:
+        return "HOLLOW_ROCK"
+    if "pompe" in texte or "push" in texte:
+        return "PUSH_UP"
+    if "traction" in texte or "pull" in texte:
+        return "PULL_UP"
+    if "dip" in texte:
+        return "TRICEP_DIP"
+    if "abdo" in texte or "crunch" in texte:
+        return "CRUNCH"
+
+    t_mes = str(row.get('Type_Mesure', 'Temps')).strip().lower()
+    return "SQUAT" if t_mes in ['reps', 'répétitions', 'repetitions'] else "PLANK_GENERIC"
+
+def calculer_calories_et_set_exo(row):
+    """
+    Calcule les calories, le temps actif (sec) et l'objet set Strava d'un exercice
+    à partir de sa quantité définie (reps ou secondes) et de Calories_Unitaire
+    (kcal/rep si Reps, kcal/minute si Temps).
+    """
+    try:
+        quantite = max(1, int(float(str(row.get('Duree_Defaut', 30)).replace(',', '.'))))
+    except Exception:
+        quantite = 30
+
+    t_mes = str(row.get('Type_Mesure', 'Temps')).strip().lower()
+    is_reps = t_mes in ['reps', 'répétitions', 'repetitions']
+
+    raw_cal = str(row.get('Calories_Unitaire', '')).strip().replace(',', '.')
+    val_cal = 0.0
+    if raw_cal and raw_cal.lower() not in {'nan', 'none', ''}:
+        try:
+            val_cal = float(raw_cal)
+        except Exception:
+            val_cal = 0.0
+
+    ex_type = obtenir_strava_exercise_type(row)
+
+    if is_reps:
+        cal_par_rep = val_cal if val_cal > 0 else 0.25  # défaut : 0.25 kcal / répétition
+        kcal = quantite * cal_par_rep
+        active_sec = quantite * 3  # ~3 sec d'effort actif par répétition
+        set_obj = {"exercise_type": ex_type, "repetitions": int(quantite)}
+        unite_cal_txt = f"{cal_par_rep:g} kcal/rep"
+    else:
+        cal_par_min = val_cal if val_cal > 0 else 5.0  # défaut : 5.0 kcal / minute
+        kcal = (quantite / 60.0) * cal_par_min
+        active_sec = int(quantite)
+        set_obj = {"exercise_type": ex_type, "duration": int(quantite)}
+        unite_cal_txt = f"{cal_par_min:g} kcal/min"
+
+    return kcal, active_sec, set_obj, unite_cal_txt
+
+def preparer_bilan_strava_seance(df_seance):
+    """Retourne (total_kcal, total_active_sec, sets_list, df_recap_sets)."""
+    if df_seance is None or df_seance.empty:
+        return 0.0, 0, [], pd.DataFrame()
+
+    total_kcal = 0.0
+    total_active_sec = 0
+    sets_list = []
+    lignes_recap = []
+
+    for idx_s, row in df_seance.iterrows():
+        kcal, active_sec, set_obj, unite_cal_txt = calculer_calories_et_set_exo(row)
+        total_kcal += kcal
+        total_active_sec += active_sec
+        sets_list.append(set_obj)
+        lignes_recap.append({
+            "Série #": len(lignes_recap) + 1,
+            "Exercice": row.get('Nom', ''),
+            "Strava_Exercise_Type": set_obj["exercise_type"],
+            "Volume": f"{set_obj['repetitions']} reps" if "repetitions" in set_obj else f"{set_obj['duration']} sec",
+            "Base Calcul": unite_cal_txt,
+            "Calories (kcal)": round(kcal, 2)
+        })
+
+    return round(total_kcal, 1), int(total_active_sec), sets_list, pd.DataFrame(lignes_recap)
+
 def generer_description_strava_renfo(df_seance, nb_tours=1):
     """Génère le texte récapitulatif détaillé d'une séance de renforcement pour Strava."""
     if df_seance is None or df_seance.empty:
         return ""
+    total_kcal, total_active_sec, _, _ = preparer_bilan_strava_seance(df_seance)
     zones_s = sorted({
         z.strip()
         for val in df_seance.get('Zone', pd.Series(dtype=str)).dropna().astype(str)
@@ -156,7 +346,10 @@ def generer_description_strava_renfo(df_seance, nb_tours=1):
     })
     mats_s = extraire_tags_materiel(df_seance['Materiel']) if 'Materiel' in df_seance.columns else []
 
-    lignes = [f"💪 Séance de renforcement ({len(df_seance)} exercices réalisés | {nb_tours} tour(s))"]
+    lignes = [
+        f"💪 Séance de renforcement ({len(df_seance)} séries réalisées | {nb_tours} tour(s))",
+        f"🔥 Calories estimées (effort actif) : ~{max(1, int(round(total_kcal)))} kcal ({total_active_sec // 60}m{total_active_sec % 60:02d}s sous tension)"
+    ]
     if zones_s:
         lignes.append(f"🎯 Zones ciblées : {', '.join(zones_s)}")
     if mats_s:
@@ -168,13 +361,17 @@ def generer_description_strava_renfo(df_seance, nb_tours=1):
     compteur_exos = {}
     ordre_exos = []
     infos_exos = {}
+    kcal_par_exo = {}
     for _, row in df_seance.iterrows():
         nom = str(row.get('Nom', 'Exercice')).strip()
+        kcal_e, _, _, _ = calculer_calories_et_set_exo(row)
         if nom not in compteur_exos:
             compteur_exos[nom] = 0
             ordre_exos.append(nom)
             infos_exos[nom] = row
+            kcal_par_exo[nom] = 0.0
         compteur_exos[nom] += 1
+        kcal_par_exo[nom] += kcal_e
 
     for nom in ordre_exos:
         r = infos_exos[nom]
@@ -185,7 +382,7 @@ def generer_description_strava_renfo(df_seance, nb_tours=1):
         mat = str(r.get('Materiel', '')).strip()
         mat_txt = f" [{mat}]" if not est_sans_materiel(mat) else ""
         serie_txt = f"{nb_series} × {qte} {unite}" if nb_series > 1 else f"{qte} {unite}"
-        lignes.append(f"• {nom} : {serie_txt}{mat_txt}")
+        lignes.append(f"• {nom} : {serie_txt}{mat_txt} (~{kcal_par_exo[nom]:.1f} kcal)")
 
     lignes.append("\n💬 Ressenti / Notes : ")
     return "\n".join(lignes)
@@ -210,6 +407,10 @@ try:
         df_renfo_loaded = df_renfo_loaded.rename(columns={'Matériel': 'Materiel'})
     if not df_renfo_loaded.empty and 'Materiel' not in df_renfo_loaded.columns:
         df_renfo_loaded['Materiel'] = ""
+    if not df_renfo_loaded.empty and 'Strava_Exercise_Type' not in df_renfo_loaded.columns:
+        df_renfo_loaded['Strava_Exercise_Type'] = ""
+    if not df_renfo_loaded.empty and 'Calories_Unitaire' not in df_renfo_loaded.columns:
+        df_renfo_loaded['Calories_Unitaire'] = ""
     st.session_state['df_renfo'] = df_renfo_loaded
     
     ws_progs = sh.worksheet("Programmes_Renfo")
@@ -564,6 +765,16 @@ if 'strava_df' in st.session_state:
             cols_ia.append('Notes')
         strava_text = df.head(12)[cols_ia].to_markdown()
 
+        df_progs_ia = st.session_state.get('df_progs', pd.DataFrame())
+        progs_renfo_text = df_progs_ia.to_markdown(index=False) if not df_progs_ia.empty else "Aucun programme prédéfini."
+
+        df_renfo_ia = st.session_state.get('df_renfo', pd.DataFrame())
+        if not df_renfo_ia.empty:
+            cols_biblio_ia = [c for c in ['Nom', 'Zone', 'Materiel', 'Type_Mesure', 'Duree_Defaut', 'Description'] if c in df_renfo_ia.columns]
+            biblio_renfo_text = df_renfo_ia[cols_biblio_ia].to_markdown(index=False)
+        else:
+            biblio_renfo_text = "Aucun exercice dans la bibliothèque."
+
         # ------------------------------------------------------------------
         # ACTION 1 : AJUSTER UNE SEMAINE EXISTANTE
         # ------------------------------------------------------------------
@@ -599,6 +810,12 @@ Mes 12 dernières sorties Strava (incluant mes notes privées) :
 Historique et plan actuel complet :
 {st.session_state['plan_text']}
 
+Routines de renforcement existantes (onglet Programmes_Renfo) :
+{progs_renfo_text}
+
+Catalogue des exercices de renforcement disponibles (onglet Bibliotheque_Renfo) :
+{biblio_renfo_text}
+
 Semaine ciblée à modifier : {semaine_choisie} (Ligne {ligne_cible_defaut} dans le Google Sheet).
 Contraintes ou demandes du coureur :
 {commentaires if commentaires else "Optimise cette semaine selon ma forme actuelle et les règles logistiques."}
@@ -607,10 +824,14 @@ Tâche :
 1. Ajuste la semaine sélectionnée (ligne {ligne_cible_defaut}) en respectant mes contraintes, la périodisation annuelle et mes règles logistiques (Foot lundi, Vélotaf / Retour à pied 40km 1000D+ le vendredi, Sortie longue le samedi).
 2. Dans la colonne 'Focus', rédige le thème suivi d'une explication claire (2 à 3 phrases) de la logique et du but physiologique de la semaine.
 3. Indique systématiquement les zones cardiaques (Z1 à Z5 + plage en bpm) dans chaque séance d'endurance.
+4. Pour le renforcement musculaire / mobilité : dans la case du jour concerné, nomme CLAIREMENT quelle routine existante de Programmes_Renfo pratiquer (avec le nombre de tours, ex: "Renfo : Routine 'Nom' (3 tours)") OU détaille une séance précise à partir des exercices de Bibliotheque_Renfo. Si pertinent (ou sur demande), définis de nouvelles routines ou de nouveaux exercices adaptés à ma préparation trail.
 
 RÈGLE ABSOLUE : Réponds uniquement en JSON strict avec deux clés :
 - "ligne" : {ligne_cible_defaut}
 - "donnees" : un tableau de 10 chaînes de caractères correspondant EXACTEMENT aux colonnes [Semaine, Date, Focus, Lundi, Mardi, Mercredi, Jeudi, Vendredi, Samedi, Dimanche].
+- "recommandations_renfo" (optionnel, texte) : tes conseils précis sur les séances de renforcement de la semaine et pourquoi tu as choisi ou créé ces routines/exercices.
+- "nouveaux_programmes" (optionnel, liste d'objets {{"Nom_Programme": "...", "Exercices": "Nom Exo 1, Nom Exo 2"}}) : si tu me définis une ou plusieurs nouvelles routines.
+- "nouveaux_exercices" (optionnel, liste d'objets {{"Nom": "...", "Zone": "...", "Materiel": "...", "Type_Mesure": "Temps ou Reps", "Duree_Defaut": 45, "Description": "...", "Strava_Exercise_Type": "...", "Calories_Unitaire": 5.0}}) : si tu me définis de nouveaux exercices absents de Bibliotheque_Renfo.
 Aucun texte avant ou après le JSON."""
 
             if st.button("🤖 Ajuster la semaine sélectionnée et METTRE À JOUR le Sheet", type="primary", use_container_width=True):
@@ -630,6 +851,12 @@ Aucun texte avant ou après le JSON."""
                         brut_json = json.loads(rep_texte)
                         
                         ligne_cible = brut_json.get("ligne", ligne_cible_defaut)
+                        if any(brut_json.get(k) for k in ("recommandations_renfo", "nouveaux_programmes", "nouveaux_exercices")):
+                            st.session_state['suggestions_renfo_ia'] = {
+                                "recommandations_renfo": brut_json.get("recommandations_renfo", ""),
+                                "nouveaux_programmes": brut_json.get("nouveaux_programmes", []),
+                                "nouveaux_exercices": brut_json.get("nouveaux_exercices", [])
+                            }
                         donnees = brut_json.get("donnees", [])
                         while len(donnees) < 10:
                             donnees.append("")
@@ -680,6 +907,12 @@ Mes 12 dernières sorties Strava (incluant mes notes privées) :
 Historique complet du plan jusqu'à la dernière semaine planifiée ({derniere_semaine_info.get('Semaine', '')} - {derniere_semaine_info.get('Date', '')}) :
 {st.session_state['plan_text']}
 
+Routines de renforcement existantes (onglet Programmes_Renfo) :
+{progs_renfo_text}
+
+Catalogue des exercices de renforcement disponibles (onglet Bibliotheque_Renfo) :
+{biblio_renfo_text}
+
 Indications particulières du coureur pour ce nouveau bloc de 4 semaines :
 {consignes_bloc if consignes_bloc else "Construis une progression logique sur 4 semaines (ex: 3 semaines de charge progressive + 1 semaine d'assimilation) alignée sur 1_Progression_Annuelle."}
 
@@ -687,10 +920,11 @@ Tâche :
 1. Génère les 4 semaines qui suivent immédiatement la dernière semaine du plan actuel (numérote-les Semaine {nb_semaines_actuelles + 1} à Semaine {nb_semaines_actuelles + 4}, et calcule exactement les dates du lundi au dimanche au format 'JJ Mmm - JJ Mmm').
 2. Pour chaque semaine, rédige dans la colonne 'Focus' le titre du bloc suivi d'une explication claire (2 à 3 phrases) de la logique et du but physiologique des entraînements de la semaine.
 3. Indique systématiquement les zones cardiaques (Z1 à Z5 + plage en bpm) pour chaque séance d'endurance, place le football le lundi, privilégie le vendredi pour le vélotaf ou le retour à pied (40km/1000D+), et place les sorties longues le samedi.
+4. Pour chaque séance de renforcement / mobilité programmée, nomme CLAIREMENT dans la case du jour quelle routine existante de Programmes_Renfo pratiquer (avec le nombre de tours) OU détaille une séance précise à partir des exercices de Bibliotheque_Renfo. Si pertinent, propose de nouvelles routines ou de nouveaux exercices dans les clés optionnelles du JSON.
 
 RÈGLE ABSOLUE : Réponds uniquement en JSON strict avec une clé "semaines" contenant une liste de 4 listes (chacune ayant exactement 10 éléments : [Semaine, Date, Focus, Lundi, Mardi, Mercredi, Jeudi, Vendredi, Samedi, Dimanche]).
 Exemple de structure :
-{{"semaines": [["Semaine 5", "16 Nov - 22 Nov", "Développement Aérobie : Logique détaillée...", "Football (Z4/Z5)", "...", "...", "...", "...", "...", "..."], [...], [...], [...]]}}
+{{"semaines": [["Semaine 5", "16 Nov - 22 Nov", "Développement Aérobie : Logique détaillée...", "Football (Z4/Z5)", "...", "...", "...", "...", "...", "..."], [...], [...], [...]], "recommandations_renfo": "...", "nouveaux_programmes": [{{"Nom_Programme": "...", "Exercices": "Exo 1, Exo 2"}}], "nouveaux_exercices": [{{"Nom": "...", "Zone": "...", "Materiel": "...", "Type_Mesure": "Temps ou Reps", "Duree_Defaut": 45, "Description": "...", "Strava_Exercise_Type": "...", "Calories_Unitaire": 5.0}}]}}
 Aucun texte avant ou après le JSON."""
 
             if st.button("🚀 Générer et AJOUTER les 4 semaines suivantes au Sheet", type="primary", use_container_width=True):
@@ -709,6 +943,12 @@ Aucun texte avant ou après le JSON."""
                         rep_texte = response.text.replace('```json', '').replace('```', '').strip()
                         brut_json = json.loads(rep_texte)
                         nouvelles_semaines = brut_json.get("semaines", [])
+                        if any(brut_json.get(k) for k in ("recommandations_renfo", "nouveaux_programmes", "nouveaux_exercices")):
+                            st.session_state['suggestions_renfo_ia'] = {
+                                "recommandations_renfo": brut_json.get("recommandations_renfo", ""),
+                                "nouveaux_programmes": brut_json.get("nouveaux_programmes", []),
+                                "nouveaux_exercices": brut_json.get("nouveaux_exercices", [])
+                            }
                         
                         lignes_propres = []
                         for sem in nouvelles_semaines:
@@ -734,6 +974,57 @@ Aucun texte avant ou après le JSON."""
             with st.expander("ℹ️ Voir le prompt de base envoyé à l'IA (Génération 4 semaines)", expanded=False):
                 st.code(prompt_generation_4, language="text")
 
+        if st.session_state.get('suggestions_renfo_ia'):
+            sugg = st.session_state['suggestions_renfo_ia']
+            with st.expander("💪 Recommandations & Nouvelles séances/exercices proposés par le Coach IA", expanded=True):
+                if sugg.get("recommandations_renfo"):
+                    st.info(f"🧠 **Conseils Renforcement du Coach :**\n{sugg['recommandations_renfo']}")
+
+                new_exos = sugg.get("nouveaux_exercices") or []
+                if new_exos:
+                    st.markdown("##### 🆕 Nouveaux exercices proposés (`Bibliotheque_Renfo`) :")
+                    df_new_exos = pd.DataFrame(new_exos)
+                    st.dataframe(df_new_exos, hide_index=True, use_container_width=True)
+                    if st.button("➕ Ajouter ces nouveaux exercices dans 'Bibliotheque_Renfo' (Google Sheet)", key="btn_add_new_exos"):
+                        try:
+                            ws_r = sh.worksheet("Bibliotheque_Renfo")
+                            headers_r = ws_r.row_values(1)
+                            rows_to_add = []
+                            for ex in new_exos:
+                                row_vals = [str(ex.get(col_h, "")) for col_h in headers_r]
+                                rows_to_add.append(row_vals)
+                            if rows_to_add:
+                                ws_r.append_rows(rows_to_add)
+                                st.success(f"✅ {len(rows_to_add)} nouvel/nouveaux exercice(s) ajouté(s) à Bibliotheque_Renfo !")
+                                sugg["nouveaux_exercices"] = []
+                                st.rerun()
+                        except Exception as e_add_ex:
+                            st.error(f"Erreur lors de l'ajout des exercices : {e_add_ex}")
+
+                new_progs = sugg.get("nouveaux_programmes") or []
+                if new_progs:
+                    st.markdown("##### 📋 Nouvelles routines proposées (`Programmes_Renfo`) :")
+                    df_new_progs = pd.DataFrame(new_progs)
+                    st.dataframe(df_new_progs, hide_index=True, use_container_width=True)
+                    if st.button("➕ Ajouter ces nouvelles routines dans 'Programmes_Renfo' (Google Sheet)", key="btn_add_new_progs"):
+                        try:
+                            ws_p = sh.worksheet("Programmes_Renfo")
+                            headers_p = ws_p.row_values(1)
+                            rows_p_add = []
+                            for pr in new_progs:
+                                if headers_p:
+                                    row_p = [str(pr.get(col_h, "")) for col_h in headers_p]
+                                else:
+                                    row_p = [str(pr.get("Nom_Programme", "")), str(pr.get("Exercices", ""))]
+                                rows_p_add.append(row_p)
+                            if rows_p_add:
+                                ws_p.append_rows(rows_p_add)
+                                st.success(f"✅ {len(rows_p_add)} nouvelle(s) routine(s) ajoutée(s) à Programmes_Renfo !")
+                                sugg["nouveaux_programmes"] = []
+                                st.rerun()
+                        except Exception as e_add_pr:
+                            st.error(f"Erreur lors de l'ajout des routines : {e_add_pr}")
+
 
     # ==========================================
     # ONGLET 3 : RENFORCEMENT 
@@ -752,17 +1043,20 @@ Aucun texte avant ou après le JSON."""
                 st.subheader("📤 Publier la séance sur Strava")
 
                 t_start = st.session_state.get('seance_start_time', datetime.now())
+                df_seance_finie = st.session_state['seance_terminee']
+                kcal_auto, active_sec_auto, sets_strava, df_recap_sets = preparer_bilan_strava_seance(df_seance_finie)
+
                 titre_strava = st.text_input(
                     "🏷️ Titre de l'activité :",
                     value=st.session_state.get('seance_nom_defaut', "💪 Renforcement Trail")
                 )
-                col_sp, col_dur = st.columns(2)
+                col_sp, col_dur, col_cal = st.columns(3)
                 with col_sp:
                     labels_sports = {
                         "WeightTraining": "🏋️ WeightTraining (Renforcement musculaire)",
                         "Workout": "💪 Workout (Entraînement)",
                         "Crossfit": "🔥 Crossfit",
-                        "Yoga": "🧘 Yoga / Mobilité"
+                        "HighIntensityIntervalTraining": "⚡ HIIT"
                     }
                     sport_strava = st.selectbox(
                         "Type d'activité Strava :",
@@ -770,12 +1064,25 @@ Aucun texte avant ou après le JSON."""
                         format_func=lambda k: labels_sports[k]
                     )
                 with col_dur:
+                    duree_defaut_min = max(int(st.session_state.get('strava_duree_min', 15)), max(1, round(active_sec_auto / 60)))
                     duree_strava_min = st.number_input(
-                        "⏱️ Durée de la séance (minutes) :",
+                        "⏱️ Durée totale séance (minutes) :",
                         min_value=1,
                         max_value=300,
-                        value=int(st.session_state.get('strava_duree_min', 15))
+                        value=duree_defaut_min,
+                        help=f"Temps actif sous tension calculé sur les exercices : {active_sec_auto // 60}m{active_sec_auto % 60:02d}s"
                     )
+                with col_cal:
+                    calories_strava = st.number_input(
+                        "🔥 Calories brûlées (kcal, basées sur reps/durée) :",
+                        min_value=1,
+                        max_value=3000,
+                        value=max(1, int(round(kcal_auto))),
+                        help="Calculé automatiquement à partir des répétitions / durées définies de chaque exercice réalisé."
+                    )
+
+                with st.expander(f"📋 Voir le détail structuré envoyé à Strava ({len(sets_strava)} séries | {active_sec_auto // 60}m{active_sec_auto % 60:02d}s d'effort actif | ~{kcal_auto:.1f} kcal)", expanded=False):
+                    st.dataframe(df_recap_sets, hide_index=True, use_container_width=True)
 
                 desc_strava = st.text_area(
                     "📝 Détail de la séance (affiché dans la description Strava) :",
@@ -785,16 +1092,28 @@ Aucun texte avant ou après le JSON."""
 
                 col_pub, col_quit = st.columns([2, 1])
                 with col_pub:
-                    if st.button("🚀 Envoyer la séance sur Strava", type="primary", use_container_width=True):
-                        with st.spinner("Publication de votre séance sur Strava..."):
+                    if st.button("🚀 Envoyer la séance structurée sur Strava (Exercices + Calories)", type="primary", use_container_width=True):
+                        with st.spinner("Envoi du fichier d'entraînement structuré (exercices, séries et calories) vers Strava..."):
                             iso_start = t_start.strftime("%Y-%m-%dT%H:%M:%SZ")
-                            ok, resultat = strava_client.create_strava_activity(
+                            elapsed_sec = max(int(duree_strava_min) * 60, active_sec_auto)
+                            ok, resultat = strava_client.upload_structured_strength_activity(
                                 name=titre_strava,
                                 sport_type=sport_strava,
                                 start_date_local_iso=iso_start,
-                                elapsed_time_sec=int(duree_strava_min) * 60,
+                                elapsed_time_sec=elapsed_sec,
+                                active_time_sec=active_sec_auto,
+                                total_calories=calories_strava,
+                                sets_list=sets_strava,
                                 description=desc_strava
                             )
+                            if not ok and "401" not in str(resultat):
+                                ok, resultat = strava_client.create_strava_activity(
+                                    name=titre_strava,
+                                    sport_type=sport_strava,
+                                    start_date_local_iso=iso_start,
+                                    elapsed_time_sec=elapsed_sec,
+                                    description=desc_strava
+                                )
                             if ok:
                                 act_id_new = resultat.get('id', '')
                                 st.success(f"✅ Séance publiée sur Strava avec succès ! (ID : {act_id_new})")
@@ -1212,10 +1531,21 @@ Aucun texte avant ou après le JSON."""
                 elif filtre_statut == "❌ Manquant / Introuvable uniquement":
                     df_affiche = df_affiche[df_affiche['Statut Média'] != "✅ Disponible"]
 
-                colonnes_ordre = ['Nom', 'Zone', 'Materiel', 'Statut Média', 'Type_Mesure', 'Duree_Defaut', 'Description', 'Media_URL']
-                colonnes_finales = [c for c in colonnes_ordre if c in df_affiche.columns] + [c for c in df_affiche.columns if c not in colonnes_ordre]
+                df_affiche['Strava_Type_Effectif'] = df_affiche.apply(
+                    lambda r: str(r.get('Strava_Exercise_Type', '')).strip() or f"{obtenir_strava_exercise_type(r)} (auto)",
+                    axis=1
+                )
+                colonnes_ordre = ['Nom', 'Zone', 'Materiel', 'Statut Média', 'Type_Mesure', 'Duree_Defaut', 'Calories_Unitaire', 'Strava_Type_Effectif', 'Description', 'Media_URL']
+                colonnes_finales = [c for c in colonnes_ordre if c in df_affiche.columns] + [c for c in df_affiche.columns if c not in colonnes_ordre and c != 'Strava_Exercise_Type']
 
                 st.dataframe(df_affiche[colonnes_finales], use_container_width=True, hide_index=True)
+
+                with st.expander("📖 Référence : Codes d'exercices Strava (`Strava_Exercise_Type`) & `Calories_Unitaire` pour le Google Sheet", expanded=False):
+                    st.markdown(
+                        "- **`Strava_Exercise_Type`** : copiez l'un des codes officiels ci-dessous dans votre Google Sheet (si laissé vide, l'application choisit automatiquement le code marqué `(auto)` dans le tableau ci-dessus).\n"
+                        "- **`Calories_Unitaire`** : indiquez les **kcal par répétition** si `Type_Mesure = Reps` (défaut auto : `0.25` kcal/rep) ou les **kcal par minute** si `Type_Mesure = Temps` (défaut auto : `5.0` kcal/min)."
+                    )
+                    st.dataframe(pd.DataFrame(CATALOGUE_STRAVA_EXERCICES), use_container_width=True, hide_index=True)
 
                 exo_apercu = st.selectbox(
                     "👁️ Tester / Prévisualiser le média d'un exercice :",

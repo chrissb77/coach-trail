@@ -172,3 +172,81 @@ def exchange_code_for_tokens(auth_code):
     if res.status_code == 200:
         return True, res.json()
     return False, f"Code {res.status_code} : {res.text}"
+
+def upload_structured_strength_activity(
+    name,
+    sport_type,
+    start_date_local_iso,
+    elapsed_time_sec,
+    active_time_sec,
+    total_calories,
+    sets_list,
+    description=""
+):
+    """
+    Envoie une séance de renforcement structurée (exercices, séries, reps/durée, calories)
+    via POST /api/v3/uploads (data_type='json'), puis met à jour le titre/description.
+    """
+    import io
+    import json
+
+    access_token = get_access_token()
+    headers = {'Authorization': f'Bearer {access_token}'}
+
+    json_payload = {
+        "version": "1.0",
+        "start_time": start_date_local_iso,
+        "elapsed_time": max(60, int(elapsed_time_sec)),
+        "active_time": max(1, int(active_time_sec)),
+        "total_calories": max(1, int(round(total_calories))),
+        "creator": {
+            "name": "Coach Trail IA"
+        },
+        "sets": sets_list
+    }
+
+    json_bytes = json.dumps(json_payload, ensure_ascii=False).encode("utf-8")
+    files = {
+        'file': ('seance_renfo.json', io.BytesIO(json_bytes), 'application/json')
+    }
+    data = {
+        'data_type': 'json',
+        'sport_type': sport_type,
+        'name': name,
+        'description': description,
+        'trainer': 1
+    }
+
+    res = requests.post("https://www.strava.com/api/v3/uploads", headers=headers, data=data, files=files)
+    if res.status_code not in (200, 201):
+        return False, f"Code {res.status_code} : {res.text}"
+
+    upload_info = res.json()
+    upload_id = upload_info.get("id")
+    activity_id = upload_info.get("activity_id")
+
+    if upload_id and not activity_id:
+        for _ in range(6):
+            time.sleep(1.5)
+            check = requests.get(f"https://www.strava.com/api/v3/uploads/{upload_id}", headers=headers)
+            if check.status_code == 200:
+                chk_data = check.json()
+                if chk_data.get("error"):
+                    return False, f"Erreur traitement fichier Strava : {chk_data.get('error')}"
+                activity_id = chk_data.get("activity_id")
+                if activity_id:
+                    upload_info = chk_data
+                    break
+
+    if activity_id:
+        try:
+            requests.put(
+                f"https://www.strava.com/api/v3/activities/{activity_id}",
+                headers=headers,
+                data={'name': name, 'sport_type': sport_type, 'description': description}
+            )
+        except Exception:
+            pass
+        return True, {"id": activity_id, "upload_id": upload_id}
+
+    return True, {"id": f"upload_{upload_id} (en cours de traitement sur Strava)", "upload_id": upload_id}
