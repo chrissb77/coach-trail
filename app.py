@@ -33,7 +33,7 @@ CATALOGUE DES OPTIONS LOGISTIQUES & MATÉRIEL DISPONIBLES :
    - Option A "Vélotaf Route/Gravel" : Trajet retour à vélo en Z1/Z2 (108-135 bpm) pour accumuler du volume aérobie sans impact articulaire.
    - Option B "Retour du travail à pied (Run-commute Choc)" : 40 km avec 1000m D+ en Z2 (108-135 bpm). C'est une très grosse séance spécifique ultra qui remplace la sortie longue du week-end (à programmer uniquement lors des semaines de charge clé ou sur demande, suivie d'un week-end très allégé).
 2. Option "VTT Électrique (VTTAE)" :
-   - Disponible (au printemps ou le week end) pour des séances souples de récupération active en Z1 (90-108 bpm) ou d'endurance fondamentale Z2 basse (108-125 bpm). Idéal pour travailler la vélocité, profiter des sentiers en forêt sans faire monter le cardio dans les bosses, ou débloquer les jambes le dimanche veille de foot.
+   - Disponible (au printemps ou le week end) pour des séances souples de récupération active en Z1 (90-108 bpm) ou d'endurance fondamentale Z2 basse (108-125 bpm). Idéal pour travailler la vélocité, profiter des sentiers en forêt sans faire monter le cardio dans les bosses, ou débloquer les jambes le dimanche veille de foot. Toujours proposer une séance alternative à pieds ou de renforcement ou de mobilité pour que je puisse m'adapter s'il fait mauvais temps.
 
 RÈGLES D'ORGANISATION HEBDOMADAIRE :
 - LUNDI : Football (séance fixe, haute intensité cardio Z4/Z5 et forte charge excentrique/tendineuse).
