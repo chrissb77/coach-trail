@@ -20,11 +20,11 @@ st.title("🏃‍♂️ Coach Virtuel - 60km")
 
 # --- CONSTANTES PHYSIOLOGIQUES & LOGISTIQUES ---
 ZONES_FC_TEXTE = """
-- Z1 (Récupération : 50-60%) : 90 - 108 bpm
-- Z2 (Endurance Fondamentale : 60-75%) : 108 - 135 bpm
-- Z3 (Tempo / Aérobie : 75-85%) : 135 - 153 bpm
-- Z4 (Seuil : 85-92%) : 153 - 166 bpm
-- Z5 (PMA / Anaérobie : 92-100%) : 166 - 180 bpm
+- Z1 (Récupération : 50-60%) : 90 - 108±5 bpm
+- Z2 (Endurance Fondamentale : 60-75%) : 108 - 135±5 bpm
+- Z3 (Tempo / Aérobie : 75-85%) : 135 - 153±5 bpm
+- Z4 (Seuil : 85-92%) : 153 - 166±5 bpm
+- Z5 (PMA / Anaérobie : 92-100%) : 166 - 180±5 bpm
 """
 
 REGLES_LOGISTIQUES_COACH = """
@@ -40,7 +40,7 @@ RÈGLES D'ORGANISATION HEBDOMADAIRE :
 - MARDI : Récupération post-foot (Repos, mobilité/renfo Achille, ou VTTAE très souple en Z1).
 - VENDREDI : Jour privilégié pour les options au départ du travail (Vélotaf ou, ponctuellement, le retour à pied de 40km / 1000m D+).
 - SAMEDI : Jour privilégié pour la Sortie Longue Trail (afin de garantir 48h de récupération avant le football du lundi), SAUF si le retour à pied de 40km a eu lieu le vendredi (auquel cas samedi = repos ou VTTAE Z1).
-- DIMANCHE : Séance souple d'assimilation (VTTAE Z1/Z2, vélo souple, footing court Z2 ou repos) pour arriver frais au foot le lundi.
+- DIMANCHE : Séance souple d'assimilation (VTTAE Z1/Z2, vélo souple, footing court Z2 ou repos) pour arriver frais au foot le lundi ou repos.
 - CONSIGNE FORMAT : Chaque séance d'endurance DOIT mentionner la zone cible et les bpm (ex: "VTTAE souple 1h30 en Z1/Z2 (95-120 bpm)"). La colonne 'Focus' (3e colonne) doit contenir le thème de la semaine suivi de 2-3 phrases expliquant la logique physiologique et le choix des options retenues.
 """
 
