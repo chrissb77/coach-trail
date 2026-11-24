@@ -20,11 +20,11 @@ st.title("🏃‍♂️ Coach Virtuel - 60km")
 
 # --- CONSTANTES PHYSIOLOGIQUES & LOGISTIQUES ---
 ZONES_FC_TEXTE = """
-- Z1 (Récupération : 50-60%) : 90 - 108±5 bpm
-- Z2 (Endurance Fondamentale : 60-75%) : 108 - 135±5 bpm
-- Z3 (Tempo / Aérobie : 75-85%) : 135 - 153±5 bpm
-- Z4 (Seuil : 85-92%) : 153 - 166±5 bpm
-- Z5 (PMA / Anaérobie : 92-100%) : 166 - 180±5 bpm
+- Z1 (Récupération : 50-60%) : 94 - 112 bpm
+- Z2 (Endurance Fondamentale : 60-75%) : 112 - 140 bpm
+- Z3 (Tempo / Aérobie : 75-85%) : 140 - 159 bpm
+- Z4 (Seuil : 85-92%) : 159 - 172 bpm
+- Z5 (PMA / Anaérobie : 92-100%) : 172 - 187 bpm
 """
 
 REGLES_LOGISTIQUES_COACH = """
@@ -597,7 +597,7 @@ if 'strava_df' in st.session_state:
                     
                 prompt_analyse = f"""
                 Tu es mon coach d'ultra-trail. Je prépare un 65km/4000D+ pour septembre 2027.
-                Mes zones cardiaques (FC Max 180) :
+                Mes zones cardiaques (FC Max 187) :
                 {ZONES_FC_TEXTE}
                 Mes 10 dernières activités (inclus mes ressentis/notes) :
                 {df_recent.to_markdown()}
@@ -738,23 +738,23 @@ if 'strava_df' in st.session_state:
     with tab_plan:
         st.header("📅 Mon Plan d'Entraînement")
         
-        # --- BANDEAU DE RÉFÉRENCE DES 5 ZONES CARDIAQUES (FC MAX 180) ---
+        # --- BANDEAU DE RÉFÉRENCE DES 5 ZONES CARDIAQUES (FC MAX 187) ---
         st.markdown("""
         <div style='display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px;'>
             <div style='flex: 1; min-width: 140px; background: #e3f2fd; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #2196f3; font-size: 13px;'>
-                <b>Z1 Récupération</b> (50-60%)<br>90 – 108 bpm
+                <b>Z1 Récupération</b> (50-60%)<br>94 – 112 bpm
             </div>
             <div style='flex: 1; min-width: 140px; background: #e8f5e9; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #4caf50; font-size: 13px;'>
-                <b>Z2 Endurance Fond.</b> (60-75%)<br>108 – 135 bpm
+                <b>Z2 Endurance Fond.</b> (60-75%)<br>112 – 140 bpm
             </div>
             <div style='flex: 1; min-width: 140px; background: #fff8e1; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #ffc107; font-size: 13px;'>
-                <b>Z3 Tempo / Aérobie</b> (75-85%)<br>135 – 153 bpm
+                <b>Z3 Tempo / Aérobie</b> (75-85%)<br>140 – 159 bpm
             </div>
             <div style='flex: 1; min-width: 140px; background: #fff3e0; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #ff9800; font-size: 13px;'>
-                <b>Z4 Seuil</b> (85-92%)<br>153 – 166 bpm
+                <b>Z4 Seuil</b> (85-92%)<br>159 – 172 bpm
             </div>
             <div style='flex: 1; min-width: 140px; background: #ffebee; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #f44336; font-size: 13px;'>
-                <b>Z5 PMA / Max</b> (92-100%)<br>166 – 180 bpm
+                <b>Z5 PMA / Max</b> (92-100%)<br>172 – 187 bpm
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -834,7 +834,7 @@ if 'strava_df' in st.session_state:
             prompt_ajustement = f"""Tu es mon coach d'ultra-trail. Objectif : 60km / 4000m D+ en septembre 2027.
 Aujourd'hui nous sommes le : {date_actuelle}.
 
-Mes 5 zones de fréquence cardiaque (FC Max = 180 bpm) :
+Mes 5 zones de fréquence cardiaque (FC Max = 187 bpm) :
 {ZONES_FC_TEXTE}
 
 Règles logistiques et physiologiques impératives :
@@ -931,7 +931,7 @@ Aucun texte avant ou après le JSON."""
             prompt_generation_4 = f"""Tu es mon coach d'ultra-trail. Objectif : 60km / 4000m D+ en septembre 2027.
 Aujourd'hui nous sommes le : {date_actuelle}.
 
-Mes 5 zones de fréquence cardiaque (FC Max = 180 bpm) :
+Mes 5 zones de fréquence cardiaque (FC Max = 187 bpm) :
 {ZONES_FC_TEXTE}
 
 Règles logistiques et physiologiques impératives :
