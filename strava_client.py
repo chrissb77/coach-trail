@@ -8,6 +8,162 @@ CLIENT_ID = ""
 CLIENT_SECRET = ""
 REFRESH_TOKEN = ""
 
+HIGH_INTENSITY_KEYWORDS = (
+    "foot", "soccer", "football", "fractionn", "vma", "pma", "seuil",
+    "interval", "hiit", "sprint", "compétition", "competition", "race",
+    "tempo", "côte", "cote", "test", "intens"
+)
+
+
+def _round_bpm(val):
+    return int(float(val) + 0.5)
+
+
+def _resolve_fc_zones(fc_config=None):
+    """Retourne (fc_max_ref, z2_min, z3_min, z4_min, z5_min) à partir de fc_config."""
+    if isinstance(fc_config, dict) and fc_config.get("zones"):
+        fc_max_ref = float(fc_config.get("fc_max_raw", fc_config.get("fc_max", 187)))
+        zones = fc_config["zones"]
+        z2_min = float(zones.get("Z2", {}).get("min_bpm", zones.get("Z1", {}).get("max_bpm", fc_max_ref * 0.60)))
+        z3_min = float(zones.get("Z3", {}).get("min_bpm", zones.get("Z2", {}).get("max_bpm", fc_max_ref * 0.75)))
+        z4_min = float(zones.get("Z4", {}).get("min_bpm", zones.get("Z3", {}).get("max_bpm", fc_max_ref * 0.85)))
+        z5_min = float(zones.get("Z5", {}).get("min_bpm", zones.get("Z4", {}).get("max_bpm", fc_max_ref * 0.92)))
+        return fc_max_ref, z2_min, z3_min, z4_min, z5_min
+
+    fc_max_ref = 187.0
+    return (
+        fc_max_ref,
+        round(fc_max_ref * 0.60, 2),
+        round(fc_max_ref * 0.75, 2),
+        round(fc_max_ref * 0.85, 2),
+        round(fc_max_ref * 0.92, 2),
+    )
+
+
+def _matches_high_intensity_label(activity_name="", activity_type=""):
+    texte = f"{activity_name or ''} {activity_type or ''}".lower()
+    return any(kw in texte for kw in HIGH_INTENSITY_KEYWORDS)
+
+
+def is_high_intensity_session(
+    activity_name="",
+    activity_type="",
+    hr_max_seance=None,
+    hr_avg=None,
+    z4_pct=None,
+    z5_pct=None,
+    fc_config=None,
+):
+    """Détermine si une séance correspond à une séance à haute intensité."""
+    _, _, z3_min, z4_min, z5_min = _resolve_fc_zones(fc_config)
+    kw_match = _matches_high_intensity_label(activity_name, activity_type)
+
+    if z4_pct is not None and z5_pct is not None:
+        if (z4_pct + z5_pct) >= 15.0 or z5_pct >= 3.0:
+            return True
+        if hr_max_seance is not None and hr_max_seance >= z5_min:
+            return True
+        if kw_match and (hr_max_seance is None or hr_max_seance >= z4_min):
+            return True
+        return False
+
+    if hr_max_seance is not None and hr_max_seance >= z5_min:
+        return True
+    if hr_avg is not None and hr_avg >= z4_min:
+        return True
+    if kw_match:
+        if hr_max_seance is not None and hr_max_seance >= z4_min:
+            return True
+        if hr_avg is not None and hr_avg >= z3_min:
+            return True
+    return False
+
+
+def format_fc_max_comparison(hr_max_seance, fc_max_ref):
+    """
+    Compare sommairement la FC max atteinte sur une séance à la FC max de référence.
+    Retourne (texte_comparaison, est_au_dessus_ref).
+    """
+    hr_int = _round_bpm(hr_max_seance)
+    ref_int = _round_bpm(fc_max_ref)
+    diff = hr_int - ref_int
+    pct = (float(hr_max_seance) / float(fc_max_ref) * 100.0) if fc_max_ref > 0 else 0.0
+
+    if diff > 0:
+        return (
+            f"{hr_int} bpm (+{diff} bpm vs FC max actuelle {ref_int} bpm, soit {pct:.0f}% — au-dessus de la référence, mise à jour à envisager dans FC_max si la mesure est fiable)",
+            True,
+        )
+    if diff == 0:
+        return (
+            f"{hr_int} bpm (égale à la FC max actuelle de {ref_int} bpm, 100%)",
+            False,
+        )
+    if diff >= -5:
+        return (
+            f"{hr_int} bpm ({diff} bpm vs FC max actuelle {ref_int} bpm, soit {pct:.0f}% — très proche de la référence)",
+            False,
+        )
+    return (
+        f"{hr_int} bpm ({diff} bpm vs FC max actuelle {ref_int} bpm, soit {pct:.0f}% — en dessous de la référence)",
+        False,
+    )
+
+
+def compute_hr_stats_from_data(hr_data, fc_config=None, activity_name="", activity_type=""):
+    """Calcule la répartition Z1-Z5, la dérive FC, la FC max atteinte et le statut haute intensité."""
+    clean_hr = [float(h) for h in hr_data if h is not None and h > 0]
+    if len(clean_hr) < 10:
+        return None
+
+    fc_max_ref, z2_min, z3_min, z4_min, z5_min = _resolve_fc_zones(fc_config)
+    n = len(clean_hr)
+    z1 = sum(1 for h in clean_hr if h < z2_min) / n * 100
+    z2 = sum(1 for h in clean_hr if z2_min <= h < z3_min) / n * 100
+    z3 = sum(1 for h in clean_hr if z3_min <= h < z4_min) / n * 100
+    z4 = sum(1 for h in clean_hr if z4_min <= h < z5_min) / n * 100
+    z5 = sum(1 for h in clean_hr if h >= z5_min) / n * 100
+
+    mid = n // 2
+    hr_first = sum(clean_hr[:mid]) / mid if mid > 0 else 0.0
+    hr_second = sum(clean_hr[mid:]) / (n - mid) if (n - mid) > 0 else 0.0
+    derive = hr_second - hr_first
+
+    hr_max = max(clean_hr)
+    hr_avg = sum(clean_hr) / n
+    high_int = is_high_intensity_session(
+        activity_name=activity_name,
+        activity_type=activity_type,
+        hr_max_seance=hr_max,
+        hr_avg=hr_avg,
+        z4_pct=z4,
+        z5_pct=z5,
+        fc_config=fc_config,
+    )
+    comp_txt, above_ref = format_fc_max_comparison(hr_max, fc_max_ref)
+
+    return {
+        "fc_max_ref": _round_bpm(fc_max_ref),
+        "hr_max": _round_bpm(hr_max),
+        "hr_avg": _round_bpm(hr_avg),
+        "z1": z1,
+        "z2": z2,
+        "z3": z3,
+        "z4": z4,
+        "z5": z5,
+        "derive": derive,
+        "is_high_intensity": high_int,
+        "comparison_text": comp_txt,
+        "is_above_ref": above_ref,
+        "boundaries": (
+            _round_bpm(z2_min),
+            _round_bpm(z3_min),
+            _round_bpm(z4_min),
+            _round_bpm(z5_min),
+        ),
+    }
+
+
 def get_access_token():
     url = "https://www.strava.com/oauth/token"
     payload = {
@@ -21,19 +177,31 @@ def get_access_token():
     response.raise_for_status()
     return response.json().get('access_token')
 
+
 def extract_training_data(sh):
     try:
         ws = sh.worksheet("Historique_Strava")
     except gspread.exceptions.WorksheetNotFound:
         ws = sh.add_worksheet(title="Historique_Strava", rows="1000", cols="20")
-        en_tetes = ['ID', 'Date', 'Date_API', 'Type', 'Nom', 'Distance (km)', 'Dénivelé (m)', 'Temps (min)', 'FC Moyenne', 'Notes']
+        en_tetes = ['ID', 'Date', 'Date_API', 'Type', 'Nom', 'Distance (km)', 'Dénivelé (m)', 'Temps (min)', 'FC Moyenne', 'Notes', 'FC Max']
         ws.append_row(en_tetes)
+
+    sheet_headers = ws.row_values(1)
+    if sheet_headers and 'FC Max' not in sheet_headers:
+        try:
+            next_col = len(sheet_headers) + 1
+            if ws.col_count < next_col:
+                ws.add_cols(1)
+            ws.update_cell(1, next_col, 'FC Max')
+            sheet_headers.append('FC Max')
+        except Exception:
+            pass
 
     donnees = ws.get_all_records()
     df_hist = pd.DataFrame(donnees)
-    
-    ids_existants = set() 
-    
+
+    ids_existants = set()
+
     if not df_hist.empty:
         last_date_str = df_hist['Date_API'].max()
         dt_obj = datetime.strptime(last_date_str, "%Y-%m-%dT%H:%M:%SZ")
@@ -41,50 +209,55 @@ def extract_training_data(sh):
         ids_existants = set(df_hist['ID'].astype(str))
     else:
         after_timestamp = int(time.time()) - (30 * 24 * 3600)
-        
+
     try:
         access_token = get_access_token()
     except Exception as e:
         print(f"Erreur d'authentification Strava : {e}")
         return df_hist if not df_hist.empty else None
-        
+
     headers = {'Authorization': f'Bearer {access_token}'}
     url_activities = "https://www.strava.com/api/v3/athlete/activities"
     res = requests.get(url_activities, headers=headers, params={'after': after_timestamp, 'per_page': 100})
-    
+
     if res.status_code != 200:
         return df_hist if not df_hist.empty else None
-        
+
     new_activities = res.json()
-    
+
     if not new_activities:
         return df_hist.sort_values(by='Date_API', ascending=False)
-        
+
+    default_cols = ['ID', 'Date', 'Date_API', 'Type', 'Nom', 'Distance (km)', 'Dénivelé (m)', 'Temps (min)', 'FC Moyenne', 'Notes', 'FC Max']
+    active_headers = sheet_headers if sheet_headers else default_cols
+
     nouvelles_lignes = []
     for act in new_activities:
         act_id_str = str(act['id'])
-        
+
         if act_id_str not in ids_existants:
             notes = get_activity_details(act_id_str)
-            
-            nouvelles_lignes.append([
-                act_id_str,
-                act['start_date_local'][:10],
-                act['start_date'],
-                act['type'],
-                act['name'],
-                round(act.get('distance', 0) / 1000, 2),
-                act.get('total_elevation_gain', 0),
-                round(act.get('moving_time', 0) / 60, 1),
-                act.get('average_heartrate', 0),
-                notes
-            ])
-        
+            valeurs_act = {
+                'ID': act_id_str,
+                'Date': act['start_date_local'][:10],
+                'Date_API': act['start_date'],
+                'Type': act['type'],
+                'Nom': act['name'],
+                'Distance (km)': round(act.get('distance', 0) / 1000, 2),
+                'Dénivelé (m)': act.get('total_elevation_gain', 0),
+                'Temps (min)': round(act.get('moving_time', 0) / 60, 1),
+                'FC Moyenne': act.get('average_heartrate', 0),
+                'Notes': notes,
+                'FC Max': act.get('max_heartrate', 0),
+            }
+            nouvelles_lignes.append([valeurs_act.get(col, "") for col in active_headers])
+
     if nouvelles_lignes:
         ws.append_rows(nouvelles_lignes)
         df_hist = pd.DataFrame(ws.get_all_records())
-        
+
     return df_hist.sort_values(by='Date_API', ascending=False)
+
 
 def get_activity_details(act_id):
     """Récupère les détails complets d'une activité (incluant description et note privée)"""
@@ -103,43 +276,43 @@ def get_activity_details(act_id):
         pass
     return ""
 
+
 def get_activity_streams(act_id):
     access_token = get_access_token()
     headers = {'Authorization': f'Bearer {access_token}'}
     url = f"https://www.strava.com/api/v3/activities/{act_id}/streams?keys=time,distance,altitude,heartrate&key_by_type=true"
-    
+
     res = requests.get(url, headers=headers)
     if res.status_code == 200:
         return res.json()
     return None
-    
-def get_advanced_kpis(act_id):
-    """Calcule la répartition sur 5 zones (FC Max 180) et la dérive cardiaque"""
+
+
+def get_advanced_kpis(act_id, fc_config=None, activity_name="", activity_type=""):
+    """Calcule la répartition sur 5 zones (selon FC_max), la FC max atteinte et la dérive cardiaque."""
     streams = get_activity_streams(act_id)
     if not streams or 'heartrate' not in streams:
         return "Pas de données cardio"
-        
-    hr_data = streams['heartrate']['data']
-    if len(hr_data) < 10:
+
+    stats = compute_hr_stats_from_data(
+        streams['heartrate']['data'],
+        fc_config=fc_config,
+        activity_name=activity_name,
+        activity_type=activity_type,
+    )
+    if not stats:
         return "Données insuffisantes"
 
-    n = len(hr_data)
-    z1 = sum(1 for h in hr_data if h < 108) / n * 100
-    z2 = sum(1 for h in hr_data if 108 <= h < 135) / n * 100
-    z3 = sum(1 for h in hr_data if 135 <= h < 153) / n * 100
-    z4 = sum(1 for h in hr_data if 153 <= h < 166) / n * 100
-    z5 = sum(1 for h in hr_data if h >= 166) / n * 100
-
-    mid = n // 2
-    hr_first = sum(hr_data[:mid]) / mid if mid > 0 else 0
-    hr_second = sum(hr_data[mid:]) / (n - mid) if mid > 0 else 0
-    derive = hr_second - hr_first
-
+    b2, b3, b4, b5 = stats["boundaries"]
+    tag_hi = " [HAUTE INTENSITÉ]" if stats["is_high_intensity"] else ""
     return (
-        f"Cardio (FCMax 180): Z1(<108): {z1:.0f}%, Z2(108-135): {z2:.0f}%, "
-        f"Z3(135-153): {z3:.0f}%, Z4(153-166): {z4:.0f}%, Z5(>166): {z5:.0f}%. "
-        f"Dérive FC: {'+' if derive > 0 else ''}{derive:.1f} bpm."
+        f"Cardio (FCMax réf {stats['fc_max_ref']}): Z1(<{b2}): {stats['z1']:.0f}%, "
+        f"Z2({b2}-{b3}): {stats['z2']:.0f}%, Z3({b3}-{b4}): {stats['z3']:.0f}%, "
+        f"Z4({b4}-{b5}): {stats['z4']:.0f}%, Z5(>={b5}): {stats['z5']:.0f}%. "
+        f"FC Max séance: {stats['comparison_text']}{tag_hi}. "
+        f"Dérive FC: {'+' if stats['derive'] > 0 else ''}{stats['derive']:.1f} bpm."
     )
+
 
 def create_strava_activity(name, sport_type, start_date_local_iso, elapsed_time_sec, description=""):
     """Crée et publie une activité manuelle sur Strava (nécessite le scope activity:write)."""
@@ -159,6 +332,7 @@ def create_strava_activity(name, sport_type, start_date_local_iso, elapsed_time_
         return True, res.json()
     return False, f"Code {res.status_code} : {res.text}"
 
+
 def exchange_code_for_tokens(auth_code):
     """Échange un code d'autorisation OAuth Strava contre un nouveau refresh_token."""
     url = "https://www.strava.com/oauth/token"
@@ -172,6 +346,7 @@ def exchange_code_for_tokens(auth_code):
     if res.status_code == 200:
         return True, res.json()
     return False, f"Code {res.status_code} : {res.text}"
+
 
 def upload_structured_strength_activity(
     name,

@@ -5,6 +5,7 @@ import importlib
 import strava_client
 importlib.reload(strava_client)
 import sheets_client
+importlib.reload(sheets_client)
 import json
 import time
 import os
@@ -18,22 +19,32 @@ st.set_page_config(page_title="Coach Trail IA", page_icon="🏃‍♂️", layou
 
 st.title("🏃‍♂️ Coach Virtuel - 60km")
 
-# --- CONSTANTES PHYSIOLOGIQUES & LOGISTIQUES ---
-ZONES_FC_TEXTE = """
-- Z1 (Récupération : 50-60%) : 94 - 112 bpm
-- Z2 (Endurance Fondamentale : 60-75%) : 112 - 140 bpm
-- Z3 (Tempo / Aérobie : 75-85%) : 140 - 159 bpm
-- Z4 (Seuil : 85-92%) : 159 - 172 bpm
-- Z5 (PMA / Anaérobie : 92-100%) : 172 - 187 bpm
-"""
+# --- CONSTANTES PHYSIOLOGIQUES & LOGISTIQUES (DYNAMIQUES SELON ONGLET FC_max) ---
+def _to_float_or_none(val):
+    if val is None or pd.isna(val):
+        return None
+    try:
+        num = float(str(val).strip().replace(",", "."))
+        return num if num > 0 else None
+    except Exception:
+        return None
 
-REGLES_LOGISTIQUES_COACH = """
+
+def build_regles_logistiques_coach(fc_config):
+    zones = (fc_config or sheets_client.build_default_fc_config())["zones"]
+    z1_min = sheets_client.round_bpm(zones["Z1"]["min_bpm"])
+    z1_max = sheets_client.round_bpm(zones["Z1"]["max_bpm"])
+    z2_min = sheets_client.round_bpm(zones["Z2"]["min_bpm"])
+    z2_max = sheets_client.round_bpm(zones["Z2"]["max_bpm"])
+    z2_basse_max = sheets_client.round_bpm((zones["Z2"]["min_bpm"] + zones["Z2"]["max_bpm"]) / 2.0)
+
+    return f"""
 CATALOGUE DES OPTIONS LOGISTIQUES & MATÉRIEL DISPONIBLES :
 1. Trajets Travail (à privilégier le VENDREDI) :
-   - Option A "Vélotaf Route/Gravel" : Trajet retour à vélo en Z1/Z2 (108-135 bpm) pour accumuler du volume aérobie sans impact articulaire.
-   - Option B "Retour du travail à pied (Run-commute Choc)" : 40 km avec 1000m D+ en Z2 (108-135 bpm). C'est une très grosse séance spécifique ultra qui remplace la sortie longue du week-end (à programmer uniquement lors des semaines de charge clé ou sur demande, suivie d'un week-end très allégé).
+   - Option A "Vélotaf Route/Gravel" : Trajet retour à vélo en Z1/Z2 ({z1_min}-{z2_max} bpm) pour accumuler du volume aérobie sans impact articulaire.
+   - Option B "Retour du travail à pied (Run-commute Choc)" : 40 km avec 1000m D+ en Z2 ({z2_min}-{z2_max} bpm). C'est une très grosse séance spécifique ultra qui remplace la sortie longue du week-end (à programmer uniquement lors des semaines de charge clé ou sur demande, suivie d'un week-end très allégé).
 2. Option "VTT Électrique (VTTAE)" :
-   - Disponible (au printemps ou le week end) pour des séances souples de récupération active en Z1 (90-108 bpm) ou d'endurance fondamentale Z2 basse (108-125 bpm). Idéal pour travailler la vélocité, profiter des sentiers en forêt sans faire monter le cardio dans les bosses, ou débloquer les jambes le dimanche veille de foot. Toujours proposer une séance alternative à pieds ou de renforcement ou de mobilité pour que je puisse m'adapter s'il fait mauvais temps.
+   - Disponible (au printemps ou le week end) pour des séances souples de récupération active en Z1 ({z1_min}-{z1_max} bpm) ou d'endurance fondamentale Z2 basse ({z2_min}-{z2_basse_max} bpm). Idéal pour travailler la vélocité, profiter des sentiers en forêt sans faire monter le cardio dans les bosses, ou débloquer les jambes le dimanche veille de foot. Toujours proposer une séance alternative à pieds ou de renforcement ou de mobilité pour que je puisse m'adapter s'il fait mauvais temps.
 
 RÈGLES D'ORGANISATION HEBDOMADAIRE :
 - LUNDI : Football (séance fixe, haute intensité cardio Z4/Z5 et forte charge excentrique/tendineuse).
@@ -41,8 +52,50 @@ RÈGLES D'ORGANISATION HEBDOMADAIRE :
 - VENDREDI : Jour privilégié pour les options au départ du travail (Vélotaf ou, ponctuellement, le retour à pied de 40km / 1000m D+).
 - SAMEDI : Jour privilégié pour la Sortie Longue Trail (afin de garantir 48h de récupération avant le football du lundi), SAUF si le retour à pied de 40km a eu lieu le vendredi (auquel cas samedi = repos ou VTTAE Z1).
 - DIMANCHE : Séance souple d'assimilation (VTTAE Z1/Z2, vélo souple, footing court Z2 ou repos) pour arriver frais au foot le lundi ou repos.
-- CONSIGNE FORMAT : Chaque séance d'endurance DOIT mentionner la zone cible et les bpm (ex: "VTTAE souple 1h30 en Z1/Z2 (95-120 bpm)"). La colonne 'Focus' (3e colonne) doit contenir le thème de la semaine suivi de 2-3 phrases expliquant la logique physiologique et le choix des options retenues.
+- CONSIGNE FORMAT : Chaque séance d'endurance DOIT mentionner la zone cible et les bpm (ex: "VTTAE souple 1h30 en Z1/Z2 ({z1_min}-{z2_basse_max} bpm)"). La colonne 'Focus' (3e colonne) doit contenir le thème de la semaine suivi de 2-3 phrases expliquant la logique physiologique et le choix des options retenues.
 """
+
+
+def render_zones_fc_banner(fc_config, sh_conn):
+    fc_max = fc_config["fc_max"]
+    zones = fc_config["zones"]
+    source = fc_config.get("source", "Google Sheet (onglet FC_max)")
+
+    col_info, col_refresh = st.columns([4, 1])
+    with col_info:
+        st.caption(f"❤️ **FC Max actuelle : {fc_max} bpm** — source : *{source}*")
+    with col_refresh:
+        if st.button("🔄 Actualiser FC max", key="btn_refresh_fc_max", use_container_width=True):
+            st.session_state['fc_config'] = sheets_client.load_fc_config(sh_conn)
+            st.rerun()
+
+    styles_zones = {
+        "Z1": ("#e3f2fd", "#2196f3"),
+        "Z2": ("#e8f5e9", "#4caf50"),
+        "Z3": ("#fff8e1", "#ffc107"),
+        "Z4": ("#fff3e0", "#ff9800"),
+        "Z5": ("#ffebee", "#f44336"),
+    }
+    cartes = []
+    for z_key in ("Z1", "Z2", "Z3", "Z4", "Z5"):
+        z = zones[z_key]
+        bg, border = styles_zones[z_key]
+        p_min = sheets_client._format_pct(z["min_pct"])
+        p_max = sheets_client._format_pct(z["max_pct"])
+        b_min = sheets_client.round_bpm(z["min_bpm"])
+        b_max = sheets_client.round_bpm(z["max_bpm"])
+        cartes.append(
+            f"<div style='flex: 1; min-width: 140px; background: {bg}; padding: 8px 12px; "
+            f"border-radius: 6px; border-left: 4px solid {border}; font-size: 13px;'>"
+            f"<b>{z_key} {z['short_label']}</b> ({p_min}-{p_max}%)<br>{b_min} – {b_max} bpm"
+            f"</div>"
+        )
+    st.markdown(
+        "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px;'>"
+        + "".join(cartes)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
 # --- FONCTION UTILE : DÉTECTION DE LA SEMAINE EN COURS ---
 def get_current_week_index(df_plan):
@@ -434,6 +487,14 @@ except Exception as e:
 sheets_client.SHEET_ID = st.secrets["SHEET_ID"]
 sh = sheets_client.connect_to_sheets()
 
+if 'fc_config' not in st.session_state:
+    st.session_state['fc_config'] = sheets_client.load_fc_config(sh)
+
+fc_config = st.session_state['fc_config']
+fc_max_actuelle = fc_config["fc_max"]
+zones_fc_texte = sheets_client.format_zones_fc_texte(fc_config)
+regles_logistiques_coach = build_regles_logistiques_coach(fc_config)
+
 try:
     ws_renfo = sh.worksheet("Bibliotheque_Renfo")
     df_renfo_loaded = pd.DataFrame(ws_renfo.get_all_records())
@@ -514,13 +575,19 @@ if 'strava_df' in st.session_state:
         with col_btn:
             if st.button("🔄 Sync Strava", use_container_width=True):
                 del st.session_state['strava_df']
+                st.session_state.pop('fc_config', None)
                 st.rerun()
 
-        col_dist, col_deniv, col_temps = st.columns(3)
+        col_dist, col_deniv, col_temps, col_fcmax = st.columns(4)
         col_dist.metric("Distance Totale", f"{df['Distance (km)'].sum():.1f} km")
         col_deniv.metric("Dénivelé Total", f"{df['Dénivelé (m)'].sum()} m")
         temps_total = int(df['Temps (min)'].sum())
         col_temps.metric("Temps d'effort", f"{temps_total // 60}h{temps_total % 60:02d}")
+        col_fcmax.metric(
+            "❤️ FC Max réf.",
+            f"{fc_max_actuelle} bpm",
+            help=f"Lue depuis {fc_config.get('source', 'FC_max')}"
+        )
         
         st.markdown("---")
         
@@ -586,26 +653,36 @@ if 'strava_df' in st.session_state:
         if st.button("🧠 Analyser ma charge d'entraînement (IA)", type="secondary", use_container_width=True):
             with st.spinner("Le coach analyse votre physiologie (et vos notes)..."):
                 cols_ia = ['Date', 'Nom', 'Type', 'Distance (km)', 'Dénivelé (m)']
+                if 'FC Moyenne' in df.columns:
+                    cols_ia.append('FC Moyenne')
+                if 'FC Max' in df.columns:
+                    cols_ia.append('FC Max')
                 if 'Notes' in df.columns:
                     cols_ia.append('Notes')
                 
                 df_recent = df.head(10)[cols_ia]
                 details_avances = ""
                 for index, row in df.head(5).iterrows():
-                    kpi = strava_client.get_advanced_kpis(row['ID'])
+                    kpi = strava_client.get_advanced_kpis(
+                        row['ID'],
+                        fc_config=fc_config,
+                        activity_name=str(row.get('Nom', '')),
+                        activity_type=str(row.get('Type', ''))
+                    )
                     details_avances += f"- Course du {row['Date']} ({row['Nom']}) : {kpi}\n"
                     
                 prompt_analyse = f"""
                 Tu es mon coach d'ultra-trail. Je prépare un 65km/4000D+ pour septembre 2027.
-                Mes zones cardiaques (FC Max 187) :
-                {ZONES_FC_TEXTE}
+                Mes zones cardiaques (FC Max actuelle = {fc_max_actuelle} bpm, lue depuis l'onglet FC_max) :
+                {zones_fc_texte}
                 Mes 10 dernières activités (inclus mes ressentis/notes) :
                 {df_recent.to_markdown()}
                 Analyse physiologique des 5 dernières :
                 {details_avances}
                 Plan actuel :
                 {st.session_state['plan_text']}
-                Fais une analyse brève (3 points à puces max) de mon état de forme (fatigue, dérive cardiaque, respect du Z2, respect du plan et retours de sensations).
+                Fais une analyse brève (3 à 4 points à puces max) de mon état de forme (fatigue, dérive cardiaque, respect du Z2, respect du plan et retours de sensations).
+                IMPORTANT : Sur mes séances à haute intensité (ex : football, fractionné, seuil/PMA, ou toute séance marquée [HAUTE INTENSITÉ]), mentionne la FC max atteinte en la comparant sommairement à ma FC max actuelle ({fc_max_actuelle} bpm) pour m'aider à savoir si je dois la mettre à jour.
                 """
                 try:
                     response = client.models.generate_content(model=model, contents=prompt_analyse)
@@ -636,11 +713,16 @@ if 'strava_df' in st.session_state:
         
         if choix:
             idx = options.index(choix)
-            act_id = df.iloc[idx]['ID']
+            act_row = df.iloc[idx]
+            act_id = act_row['ID']
+            act_nom = str(act_row.get('Nom', ''))
+            act_type = str(act_row.get('Type', ''))
+            act_fc_moy = _to_float_or_none(act_row.get('FC Moyenne'))
+            act_fc_max = _to_float_or_none(act_row.get('FC Max')) if 'FC Max' in df.columns else None
             
             note = ""
             if 'Notes' in df.columns:
-                val = df.iloc[idx]['Notes']
+                val = act_row['Notes']
                 if pd.notna(val) and str(val).strip().lower() not in ["", "none", "nan"]:
                     note = str(val).strip()
             
@@ -653,14 +735,33 @@ if 'strava_df' in st.session_state:
                         ws_hist = sh.worksheet("Historique_Strava")
                         cell = ws_hist.find(str(act_id))
                         if cell:
-                            ws_hist.update_cell(cell.row, 10, note)
+                            headers_hist = ws_hist.row_values(1)
+                            col_notes = headers_hist.index('Notes') + 1 if 'Notes' in headers_hist else 10
+                            ws_hist.update_cell(cell.row, col_notes, note)
                     except Exception:
                         pass
 
             if note:
                 st.info(f"📝 **Notes Strava :** {note}")
-                    
-            if st.toggle("📈 Afficher la télémétrie détaillée (Cardio / Alti / Allure)"):
+
+            afficher_telemetrie = st.toggle("📈 Afficher la télémétrie détaillée (Cardio / Alti / Allure)")
+
+            if not afficher_telemetrie and act_fc_max is not None:
+                if strava_client.is_high_intensity_session(
+                    activity_name=act_nom,
+                    activity_type=act_type,
+                    hr_max_seance=act_fc_max,
+                    hr_avg=act_fc_moy,
+                    fc_config=fc_config,
+                ):
+                    comp_txt, above_ref = strava_client.format_fc_max_comparison(act_fc_max, fc_max_actuelle)
+                    msg_hi = f"⚡ **Séance haute intensité — FC max atteinte :** {comp_txt}"
+                    if above_ref:
+                        st.warning(msg_hi)
+                    else:
+                        st.info(msg_hi)
+
+            if afficher_telemetrie:
                 with st.spinner("Calcul de la vitesse ajustée et génération du graphique..."):
                     streams = strava_client.get_activity_streams(act_id)
                     
@@ -691,6 +792,46 @@ if 'strava_df' in st.session_state:
                             df_s['hr'] = streams['heartrate']['data']
                         else:
                             df_s['hr'] = None
+
+                        if df_s['hr'].notna().any():
+                            hr_stats = strava_client.compute_hr_stats_from_data(
+                                df_s['hr'].dropna().tolist(),
+                                fc_config=fc_config,
+                                activity_name=act_nom,
+                                activity_type=act_type,
+                            )
+                            if hr_stats:
+                                if act_fc_max is None:
+                                    if 'FC Max' not in df.columns:
+                                        df['FC Max'] = ""
+                                    df.at[idx, 'FC Max'] = hr_stats['hr_max']
+                                    st.session_state['strava_df'] = df
+                                    try:
+                                        ws_hist = sh.worksheet("Historique_Strava")
+                                        headers_hist = ws_hist.row_values(1)
+                                        if 'FC Max' in headers_hist:
+                                            cell = ws_hist.find(str(act_id))
+                                            if cell:
+                                                ws_hist.update_cell(cell.row, headers_hist.index('FC Max') + 1, hr_stats['hr_max'])
+                                    except Exception:
+                                        pass
+
+                                if hr_stats['is_high_intensity']:
+                                    msg_hi = f"⚡ **Séance haute intensité — FC max atteinte :** {hr_stats['comparison_text']}"
+                                    if hr_stats['is_above_ref']:
+                                        st.warning(msg_hi)
+                                    else:
+                                        st.info(msg_hi)
+
+                                b2, b3, b4, b5 = hr_stats['boundaries']
+                                st.caption(
+                                    f"❤️ **Cardio (FC max réf. {hr_stats['fc_max_ref']} bpm)** : "
+                                    f"Moy **{hr_stats['hr_avg']}** / Max **{hr_stats['hr_max']} bpm** — "
+                                    f"Z1(<{b2}): {hr_stats['z1']:.0f}% | Z2({b2}-{b3}): {hr_stats['z2']:.0f}% | "
+                                    f"Z3({b3}-{b4}): {hr_stats['z3']:.0f}% | Z4({b4}-{b5}): {hr_stats['z4']:.0f}% | "
+                                    f"Z5(>={b5}): {hr_stats['z5']:.0f}% — "
+                                    f"Dérive FC : {'+' if hr_stats['derive'] > 0 else ''}{hr_stats['derive']:.1f} bpm"
+                                )
 
                         col_opt, col_graph = st.columns([1, 4])
                         
@@ -738,26 +879,8 @@ if 'strava_df' in st.session_state:
     with tab_plan:
         st.header("📅 Mon Plan d'Entraînement")
         
-        # --- BANDEAU DE RÉFÉRENCE DES 5 ZONES CARDIAQUES (FC MAX 187) ---
-        st.markdown("""
-        <div style='display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px;'>
-            <div style='flex: 1; min-width: 140px; background: #e3f2fd; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #2196f3; font-size: 13px;'>
-                <b>Z1 Récupération</b> (50-60%)<br>94 – 112 bpm
-            </div>
-            <div style='flex: 1; min-width: 140px; background: #e8f5e9; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #4caf50; font-size: 13px;'>
-                <b>Z2 Endurance Fond.</b> (60-75%)<br>112 – 140 bpm
-            </div>
-            <div style='flex: 1; min-width: 140px; background: #fff8e1; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #ffc107; font-size: 13px;'>
-                <b>Z3 Tempo / Aérobie</b> (75-85%)<br>140 – 159 bpm
-            </div>
-            <div style='flex: 1; min-width: 140px; background: #fff3e0; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #ff9800; font-size: 13px;'>
-                <b>Z4 Seuil</b> (85-92%)<br>159 – 172 bpm
-            </div>
-            <div style='flex: 1; min-width: 140px; background: #ffebee; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #f44336; font-size: 13px;'>
-                <b>Z5 PMA / Max</b> (92-100%)<br>172 – 187 bpm
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # --- BANDEAU DE RÉFÉRENCE DES 5 ZONES CARDIAQUES (DYNAMIQUE DEPUIS FC_max) ---
+        render_zones_fc_banner(fc_config, sh)
 
         jours_fr = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
         jour_actuel = jours_fr[datetime.now().weekday()]
@@ -800,6 +923,8 @@ if 'strava_df' in st.session_state:
         
         date_actuelle = datetime.now().strftime("%Y-%m-%d")
         cols_ia = ['Date', 'Nom', 'Type', 'Distance (km)', 'Dénivelé (m)', 'Temps (min)', 'FC Moyenne']
+        if 'FC Max' in df.columns:
+            cols_ia.append('FC Max')
         if 'Notes' in df.columns:
             cols_ia.append('Notes')
         strava_text = df.head(12)[cols_ia].to_markdown()
@@ -834,11 +959,11 @@ if 'strava_df' in st.session_state:
             prompt_ajustement = f"""Tu es mon coach d'ultra-trail. Objectif : 60km / 4000m D+ en septembre 2027.
 Aujourd'hui nous sommes le : {date_actuelle}.
 
-Mes 5 zones de fréquence cardiaque (FC Max = 187 bpm) :
-{ZONES_FC_TEXTE}
+Mes 5 zones de fréquence cardiaque (FC Max = {fc_max_actuelle} bpm) :
+{zones_fc_texte}
 
 Règles logistiques et physiologiques impératives :
-{REGLES_LOGISTIQUES_COACH}
+{regles_logistiques_coach}
 
 Fil conducteur annuel (1_Progression_Annuelle) :
 {macro_text}
@@ -931,11 +1056,11 @@ Aucun texte avant ou après le JSON."""
             prompt_generation_4 = f"""Tu es mon coach d'ultra-trail. Objectif : 60km / 4000m D+ en septembre 2027.
 Aujourd'hui nous sommes le : {date_actuelle}.
 
-Mes 5 zones de fréquence cardiaque (FC Max = 187 bpm) :
-{ZONES_FC_TEXTE}
+Mes 5 zones de fréquence cardiaque (FC Max = {fc_max_actuelle} bpm) :
+{zones_fc_texte}
 
 Règles logistiques et physiologiques impératives :
-{REGLES_LOGISTIQUES_COACH}
+{regles_logistiques_coach}
 
 Fil conducteur annuel (1_Progression_Annuelle) :
 {macro_text}
